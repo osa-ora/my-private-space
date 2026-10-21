@@ -1,19 +1,16 @@
 <div align="center">
 
-# My Private Space
+# <img width="243" height="55" alt="Screenshot 2026-10-22 at 12 26 19 AM" src="https://github.com/user-attachments/assets/997e9af3-3f97-4a64-a080-d36b3a4f038b" />
 
 ### Your files. Your machine. Your private space.
 
 A local-first encrypted file vault with a clean browser interface, multi-vault management, and recoverable file operations — powered by Python, FastAPI, and vanilla JavaScript.
 
-**Version 1.0 Beta** · Runs locally · No cloud account required
+**Version 1.0 Beta** · Runs locally
 
 </div>
 
 ---
-
-> [!WARNING]
-> **Beta software — use with care.** My Private Space has not undergone an independent security audit. Back up your data before use, test with disposable files first, and do not rely on this beta as the only copy of important or irreplaceable data.
 
 ## At a glance
 
@@ -219,5 +216,8 @@ my-private-space/
 **My Private Space · Version 1.0 Beta**
 
 Built for local-first file privacy. Back up first, and use the beta thoughtfully.
+
+> [!WARNING]
+> **Back up your data before use, test with disposable files first, and do not rely on this beta as the only copy of important or irreplaceable data.
 
 </div>
