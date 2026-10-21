@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="mps-token" content="{{ api_token }}">
+  <meta name="color-scheme" content="light dark">
+  <title>{{ app_name }}</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script defer src="/static/js/app.js"></script>
+</head>
+<body data-theme="light-navy">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><defs><linearGradient id="mpsLogoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9ed7ff"/><stop offset="1" stop-color="#4b8fe2"/></linearGradient></defs><path d="M24 3.5 41 10v12.1c0 10.1-6.8 17.6-17 22.4C13.8 39.7 7 32.2 7 22.1V10L24 3.5Z" fill="url(#mpsLogoGrad)"/><path d="M17.5 22v-3.2a6.5 6.5 0 0 1 13 0V22" fill="none" stroke="#14284b" stroke-width="3.2" stroke-linecap="round"/><rect x="14.5" y="21" width="19" height="15" rx="4" fill="#14284b"/><circle cx="24" cy="27" r="2.2" fill="#9ed7ff"/><path d="M24 29v2.5" stroke="#9ed7ff" stroke-width="2" stroke-linecap="round"/><path d="m4 15 4-2m32 0 4 2M4 30l4 2m32-2 4 2" stroke="#8fc4ff" stroke-width="1.8" stroke-linecap="round"/></svg></span><span>My Private Space</span></div>
+    <div class="top-actions">
+      <button class="icon-button" id="helpButton" title="Help" aria-label="Help">?</button>
+      <button class="icon-button" id="aboutButton" title="About My Private Space" aria-label="About My Private Space">ⓘ</button>
+      <button class="icon-button hidden" id="switchVaultButton" title="Switch vault" aria-label="Switch vault"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4m14 4H3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="icon-button hidden" id="lockVaultButton" title="Lock vault" aria-label="Lock vault"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10" width="15" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+      <button class="icon-button" id="settingsButton" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l1.45-1.13-1.6-2.77-1.75.7a7.4 7.4 0 0 0-2.6-1.5L14.65 4h-3.3l-.25 1.8a7.4 7.4 0 0 0-2.6 1.5l-1.75-.7-1.6 2.77L6.6 10.5a7.8 7.8 0 0 0 0 3l-1.45 1.13 1.6 2.77 1.75-.7a7.4 7.4 0 0 0 2.6 1.5l.25 1.8h3.3l.25-1.8a7.4 7.4 0 0 0 2.6-1.5l1.75.7 1.6-2.77Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+  </header>
+
+  <main>
+    <section id="setupScreen" class="gate-screen hidden">
+      <div class="gate-card">
+        <div class="eyebrow">FIRST-TIME SETUP</div>
+        <h1>Create your private space</h1>
+        <p class="muted">Choose an existing, empty directory for your encrypted vault and create your main password.</p>
+        <form id="setupForm" class="form-stack">
+          <label for="setupVaultLabel">Vault label *</label>
+          <input id="setupVaultLabel" required maxlength="80" placeholder="e.g. Personal" autocomplete="off">
+          <label for="setupPrefix">Storage ID prefix *</label><input id="setupPrefix" required maxlength="32" pattern="[A-Za-z0-9_-]+" placeholder="e.g. personal-" autocomplete="off"><p class="field-hint">Letters, digits, hyphens, and underscores only. Immutable after creation.</p>
+          <label for="targetDirectory">Vault directory path</label>
+          <input id="targetDirectory" name="targetDirectory" required placeholder="For example: /Users/me/PrivateVault" autocomplete="off">
+          <p class="field-hint">Enter a local directory path on this computer. The server will create the vault manifest inside it.</p>
+          <label for="setupPassword">Main password</label>
+          <input id="setupPassword" type="password" required autocomplete="new-password">
+          <label for="setupConfirm">Confirm main password</label>
+          <input id="setupConfirm" type="password" required autocomplete="new-password">
+          <ul class="password-rules"><li>Exactly 8 Unicode characters</li><li>Uppercase, lowercase, number and special character</li><li>Arabic and other Unicode characters are supported</li></ul>
+          <button class="primary-button" type="submit">Create vault</button>
+          <div id="setupMessage" class="message" role="status"></div>
+        </form>
+      </div>
+    </section>
+
+    <section id="unlockScreen" class="gate-screen hidden">
+      <div class="gate-card compact-card">
+        <div class="vault-emblem"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><defs><linearGradient id="unlockLogoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9ed7ff"/><stop offset="1" stop-color="#4b8fe2"/></linearGradient></defs><path d="M24 3.5 41 10v12.1c0 10.1-6.8 17.6-17 22.4C13.8 39.7 7 32.2 7 22.1V10L24 3.5Z" fill="url(#unlockLogoGrad)"/><path d="M17.5 22v-3.2a6.5 6.5 0 0 1 13 0V22" fill="none" stroke="#14284b" stroke-width="3.2" stroke-linecap="round"/><rect x="14.5" y="21" width="19" height="15" rx="4" fill="#14284b"/><circle cx="24" cy="27" r="2.2" fill="#9ed7ff"/><path d="M24 29v2.5" stroke="#9ed7ff" stroke-width="2" stroke-linecap="round"/><path d="m4 15 4-2m32 0 4 2M4 30l4 2m32-2 4 2" stroke="#8fc4ff" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+        <div class="eyebrow">PRIVATE BY DESIGN</div>
+        <h1>Unlock your space</h1>
+        <p class="muted">Enter your 8-character main password to access your vault.</p>
+        <form id="unlockForm" class="form-stack">
+          <label for="unlockPassword">Main password</label>
+          <input id="unlockPassword" type="password" required autocomplete="current-password" autofocus>
+          <button class="primary-button" type="submit">Unlock vault</button>
+          <div id="unlockMessage" class="message" role="status"></div>
+        </form>
+        <div id="vaultPicker" class="form-stack hidden"><label for="vaultSelect">Choose vault</label><select id="vaultSelect"></select><button id="openSelectedVaultButton" class="primary-button" type="button">Open selected vault</button><button id="createVaultFromLoginButton" class="secondary-button" type="button">Create New Vault</button></div>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace hidden">
+      <aside class="sidebar panel">
+        <div class="panel-heading"><span id="sidebarVaultLabel">Vault locked</span><button id="createVaultButton" class="subtle-button" title="Create New Vault">＋ New vault</button><button id="refreshButton" class="subtle-button" title="Refresh">↻</button></div>
+        <div id="tree" class="tree" aria-label="Vault files and folders"></div>
+        <div class="sidebar-bottom">
+          <button id="trashButton" class="nav-action"><span>▤</span> Deleted Items <span id="trashCount" class="count-pill">0</span></button>
+          <button id="importRootButton" class="nav-action"><span>＋</span> Add files or folder</button>
+        </div>
+      </aside>
+      <section class="preview-panel panel">
+        <div class="preview-toolbar"><div><div class="eyebrow" id="previewEyebrow">PREVIEW</div><h2 id="previewTitle">Select a file</h2></div><div id="previewActions" class="preview-actions"></div></div>
+        <div id="previewContent" class="preview-content empty-state"><div class="empty-icon">▧</div><h3>Your private space</h3><p>Select a file in the navigation tree to preview it here.</p></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="settingsDialog" class="modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">PREFERENCES</div><h2>Settings</h2></div><button class="icon-button" value="cancel" aria-label="Close settings">×</button></form>
+    <div class="modal-body form-stack">
+      <label for="themeSelect">Appearance</label>
+      <select id="themeSelect"><option value="light-navy">Light with navy header</option><option value="dark">Dark mode</option></select>
+      <div class="section-divider"></div>
+      <h3>Vault management</h3>
+      <p class="muted small">Current vault: <strong id="settingsVaultLabel"></strong></p>
+      <button id="createVaultSettingsButton" class="secondary-button" type="button">Create New Vault</button>
+      <div class="section-divider"></div>
+      <h3>Storage prefix</h3><p class="muted small">Prefix for new physical IDs: <strong id="settingsVaultPrefix"></strong>. Existing IDs are never reorganized; the prefix cannot be changed after creation.</p>
+      <div class="section-divider"></div>
+      <h3>Vault directory</h3>
+      <p class="muted small">The current vault remains intact until the copied vault has been verified and the new location activated.</p>
+      <label for="newTargetDirectory">New target directory path</label>
+      <input id="newTargetDirectory" placeholder="Enter an existing, empty directory path">
+      <button id="moveVaultButton" class="secondary-button" type="button">Copy and switch vault location</button>
+      <div class="section-divider"></div>
+      <h3>Change main password</h3>
+      <label for="currentPassword">Current password</label><input id="currentPassword" type="password" autocomplete="current-password">
+      <label for="newPassword">New password</label><input id="newPassword" type="password" autocomplete="new-password">
+      <label for="confirmNewPassword">Confirm new password</label><input id="confirmNewPassword" type="password" autocomplete="new-password">
+      <button id="changePasswordButton" class="secondary-button" type="button">Change password</button>
+      <div id="settingsMessage" class="message" role="status"></div>
+    </div>
+  </dialog>
+
+  <dialog id="switchVaultDialog" class="modal small-modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">VAULT MANAGEMENT</div><h2>Switch or Remove Vault</h2></div><button class="icon-button" value="cancel" aria-label="Close vault management">×</button></form>
+    <div class="modal-body form-stack"><label for="managedVaultSelect">Registered vaults</label><select id="managedVaultSelect"></select><p class="muted small">Removing a vault only unregisters it; its encrypted directory and contents are preserved.</p><button id="switchToVaultButton" class="primary-button" type="button">Switch to selected vault</button><button id="removeVaultButton" class="secondary-button danger-button" type="button">Remove selected vault</button><div id="vaultManagementMessage" class="message" role="status"></div></div>
+  </dialog>
+
+  <dialog id="createVaultDialog" class="modal small-modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">MULTIPLE VAULTS</div><h2>Create New Vault</h2></div><button class="icon-button" value="cancel" aria-label="Close create vault">×</button></form>
+    <div class="modal-body form-stack"><label for="createVaultLabel">Vault label *</label><input id="createVaultLabel" required maxlength="80" placeholder="e.g. Work" autocomplete="off"><label for="createVaultDirectory">Destination folder path *</label><input id="createVaultDirectory" required placeholder="Path to a new or existing vault folder" autocomplete="off"><label for="createVaultPrefix">Storage ID prefix *</label><input id="createVaultPrefix" required maxlength="32" pattern="[A-Za-z0-9_-]+" placeholder="e.g. work-" autocomplete="off"><label class="inline-check"><input id="convertExistingFolder" type="checkbox"> Convert ordinary non-empty folder to encrypted vault storage</label><p class="muted small">All vaults use the same main password. Empty folders create new vaults; valid existing vaults are verified and registered without changing their contents. Conversion encrypts ordinary files after explicit confirmation and preserves originals until verification succeeds.</p><button id="confirmCreateVaultButton" class="primary-button" type="button">Create and open vault</button><div id="createVaultMessage" class="message" role="status"></div></div>
+  </dialog>
+
+  <dialog id="helpDialog" class="modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">MY PRIVATE SPACE</div><h2>Help</h2></div><button class="icon-button" value="cancel" aria-label="Close help">×</button></form>
+    <div class="modal-body help-content">
+      <h3>Encrypted file and folder storage</h3><p>Import files and folders into the vault. My Private Space stores encrypted content under opaque IDs, while the navigation tree shows the original names after you unlock the vault. Select a file to preview supported images, PDFs, text, audio, and video.</p>
+      <h3>Multiple vaults</h3><p>Create separate vaults for different purposes using the same main password. After authentication, one registered vault opens directly; multiple vaults show a selector. Switch without re-entering the password, or lock the workspace. The current vault label appears in the navigation panel.</p>
+      <h3>Recoverable deletion</h3><p>Delete moves items into Deleted Items, including a folder's contents, so you can restore them. Permanent deletion is available from Deleted Items. Removing a vault from the registered list is different: it preserves the encrypted directory and its contents.</p>
+      <h3>Item locks</h3><p>Files and folders can have an additional password. A locked folder hides its children until unlocked, and locked file content cannot be previewed. Keep a secure record of these passwords; there is no password recovery service.</p>
+      <h3>Vault folders, conversion, and backups</h3><p>Choose an empty directory for a new vault. A valid existing vault can be registered again without changing IDs or contents. An ordinary non-empty folder requires explicit conversion confirmation; files are staged, encrypted, and verified before committing, with originals kept recoverable until then. Back up both vault directories and config.me together. Restore a vault by locating its encrypted directory and registering it with the same main password.</p><h3>Main password, lockout, and inactivity</h3><p>Changing the main password updates all registered vaults as one staged transaction; secondary passwords remain independent. Three consecutive failed main-password attempts trigger a five-minute lockout persisted in state.me. An unlocked vault automatically locks after five minutes without activity, including across tabs.</p><h3>Storage prefixes and security limitations</h3><p>Each new vault has an immutable prefix for new physical IDs. Existing IDs remain unchanged. state.me uses simple reversible obfuscation and Base64, not encryption or tamper protection. The main password transformation is deterministic and is not a password-based key derivation function. Keep backups and do not expose the local server to a network.</p>
+      <h3>Privacy and local use</h3><p>This app is designed to run on your computer through its local address. Do not expose the server to your network. Browser-based copy/save deterrents are not a guarantee against screenshots or access by someone who controls the computer.</p>
+      <p class="muted small">The main password uses the deterministic 32-byte transformation described in the README. Review the security notes and maintain independent backups before storing irreplaceable data.</p>
+    </div>
+  </dialog>
+
+  <dialog id="aboutDialog" class="modal small-modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">ABOUT</div><h2>My Private Space</h2></div><button class="icon-button" value="cancel" aria-label="Close about">×</button></form>
+    <div class="modal-body about-content">
+      <div class="about-emblem"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><defs><linearGradient id="aboutLogoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9ed7ff"/><stop offset="1" stop-color="#4b8fe2"/></linearGradient></defs><path d="M24 3.5 41 10v12.1c0 10.1-6.8 17.6-17 22.4C13.8 39.7 7 32.2 7 22.1V10L24 3.5Z" fill="url(#aboutLogoGrad)"/><path d="M17.5 22v-3.2a6.5 6.5 0 0 1 13 0V22" fill="none" stroke="#14284b" stroke-width="3.2" stroke-linecap="round"/><rect x="14.5" y="21" width="19" height="15" rx="4" fill="#14284b"/><circle cx="24" cy="27" r="2.2" fill="#9ed7ff"/><path d="M24 29v2.5" stroke="#9ed7ff" stroke-width="2" stroke-linecap="round"/></svg></div>
+      <h3>My Private Space <span class="about-version">Version 1.0 Beta</span></h3>
+      <p>Open Source Project · Powered by <strong>Osama Oransa</strong></p>
+    </div>
+  </dialog>
+
+  <dialog id="trashDialog" class="modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">RECOVERY</div><h2>Deleted Items</h2></div><button class="icon-button" value="cancel" aria-label="Close deleted items">×</button></form>
+    <div id="trashList" class="modal-body trash-list"></div>
+  </dialog>
+
+  <dialog id="exportDialog" class="modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">RESTORE COPY</div><h2 id="exportTitle">Restore outside the vault</h2></div><button class="icon-button" value="cancel" aria-label="Close restore dialog">×</button></form>
+    <div class="modal-body form-stack">
+      <p class="muted">Choose an existing destination directory. Files are decrypted and restored with their original names and folder structure.</p>
+      <label for="exportDestination">Destination directory path</label><input id="exportDestination" type="text" autocomplete="off" placeholder="e.g. /Users/you/Documents" required>
+      <label><input id="exportOverwrite" type="checkbox"> Overwrite existing files/folders when names conflict</label>
+      <label><input id="exportDeleteSource" type="checkbox"> Move encrypted copy to Deleted Items after successful restore</label>
+      <p class="muted small">If unchecked, the encrypted vault copy remains. If checked, vault data is removed only after the destination copy succeeds.</p>
+      <button id="startExportButton" class="primary-button" type="button">Restore copy</button>
+      <div id="exportMessage" class="message" role="status"></div>
+    </div>
+  </dialog>
+
+  <dialog id="contextDialog" class="modal small-modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">ITEM ACTIONS</div><h2 id="contextTitle">Actions</h2></div><button class="icon-button" value="cancel" aria-label="Close item actions">×</button></form>
+    <div id="contextActions" class="modal-body action-list"></div>
+  </dialog>
+
+  <dialog id="importDialog" class="modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">IMPORT</div><h2 id="importTitle">Add files or folder</h2></div><button class="icon-button" value="cancel" aria-label="Close import">×</button></form>
+    <div class="modal-body form-stack">
+      <p class="muted">Original source files are not changed. Folder imports preserve their relative hierarchy.</p>
+      <label for="filePicker">Choose files</label><input id="filePicker" type="file" multiple>
+      <label for="folderPicker">Or choose a folder</label><input id="folderPicker" type="file" webkitdirectory multiple>
+      <button id="startImportButton" class="primary-button" type="button">Import selected items</button>
+      <div id="importMessage" class="message" role="status"></div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
