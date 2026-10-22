@@ -2,7 +2,7 @@
   'use strict';
   const token = document.querySelector('meta[name="mps-token"]').content;
   const $ = (id) => document.getElementById(id);
-  const state = { unlocked: false, selectedId: null, selectedEntry: null, importParent: '', expanded: new Set(), theme: localStorage.getItem('mps-theme') || 'light-navy', previewUrl: null, lastActivity: Date.now(), idleLocked: false };
+  const state = { unlocked: false, selectedId: null, selectedEntry: null, importParent: '', treeItems: [], expanded: new Set(), theme: localStorage.getItem('mps-theme') || 'light-navy', previewUrl: null, lastActivity: Date.now(), idleLocked: false };
   const screens = ['setupScreen', 'unlockScreen', 'workspace'];
   const dialogs = ['settingsDialog', 'createVaultDialog', 'switchVaultDialog', 'helpDialog', 'trashDialog', 'contextDialog', 'importDialog', 'exportDialog'];
 
@@ -16,18 +16,25 @@
     if (!response.ok) throw new Error(data.detail || data.message || `Request failed (${response.status})`);
     return data;
   }
-  function showMessage(id, message, success = false) { const el = $(id); el.textContent = message || ''; el.classList.toggle('success', !!success); }
+  function showMessage(id, message, success = false) { const el = $(id); if (!el) return; el.textContent = message || ''; el.classList.toggle('success', !!success); }
   let toastTimer;
+  function clearAllMessages() {
+    document.querySelectorAll('.message').forEach(el => { el.textContent = ''; el.classList.remove('success'); });
+    const toastEl = $('toast');
+    if (toastEl) { toastEl.textContent = ''; toastEl.classList.remove('show'); }
+    clearTimeout(toastTimer);
+  }
   function toast(message) { const el = $('toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600); }
-  function showScreen(id) { screens.forEach(s => $(s).classList.toggle('hidden', s !== id)); $('lockVaultButton').classList.toggle('hidden', id !== 'workspace'); $('switchVaultButton').classList.toggle('hidden', id !== 'workspace'); }
+  function showScreen(id) { clearAllMessages(); screens.forEach(s => $(s).classList.toggle('hidden', s !== id)); $('lockVaultButton').classList.toggle('hidden', id !== 'workspace'); $('switchVaultButton').classList.toggle('hidden', id !== 'workspace'); }
   function applyTheme(theme) { state.theme = theme; document.body.dataset.theme = theme; localStorage.setItem('mps-theme', theme); if ($('themeSelect')) $('themeSelect').value = theme; }
   function closePreviewUrl() { if (state.previewUrl) URL.revokeObjectURL(state.previewUrl); state.previewUrl = null; }
   function escapeHtml(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   async function refreshTree() {
     const data = await api('/api/tree');
     $('trashCount').textContent = data.trash_count;
+    state.treeItems = data.items || [];
     $('tree').innerHTML = '';
-    renderTreeItems(data.items, $('tree'), 0);
+    renderTreeItems(state.treeItems, $('tree'), 0);
     if (state.selectedId) {
       const found = findEntry(data.items, state.selectedId);
       if (!found) { state.selectedId = null; state.selectedEntry = null; resetPreview(); }
@@ -38,7 +45,7 @@
   function renderTreeItems(items, container, depth) {
     items.forEach(item => {
       const wrapper = document.createElement('div');
-      const row = document.createElement('div'); row.className = `tree-row${state.selectedId === item.id ? ' selected' : ''}`; row.dataset.id = item.id;
+      const row = document.createElement('div'); row.className = `tree-row${state.selectedId === item.id ? ' selected' : ''}`; row.dataset.id = item.id; row.tabIndex = 0; row.setAttribute('role', 'treeitem'); row.setAttribute('aria-selected', state.selectedId === item.id ? 'true' : 'false');
       const hasChildren = item.type === 'folder' && item.children && item.children.length;
       const expanded = state.expanded.has(item.id);
       const chevron = document.createElement('span'); chevron.className = 'tree-chevron'; chevron.textContent = item.type === 'folder' ? (item.locked ? '•' : (hasChildren ? (expanded ? '▾' : '▸') : '')) : '';
@@ -48,21 +55,73 @@
       row.append(chevron, icon, name);
       if (item.locked) { const lock = document.createElement('span'); lock.className = 'tree-icon'; lock.textContent = '•'; row.append(lock); }
       const more = document.createElement('button'); more.className = 'tree-more'; more.type = 'button'; more.title = 'Item actions'; more.setAttribute('aria-label', `Actions for ${item.name}`); more.textContent = '⋯'; more.addEventListener('click', e => { e.stopPropagation(); openContext(item); }); row.append(more);
-      row.addEventListener('click', () => { if (item.locked) askUnlock(item); else if (item.type === 'folder') { selectFolder(item); if (state.expanded.has(item.id)) state.expanded.delete(item.id); else state.expanded.add(item.id); renderTreeItemsRoot(); } else if (item.type === 'file') selectEntry(item); });
+      row.addEventListener('click', () => {
+        row.focus({ preventScroll: true });
+        if (item.locked) askUnlock(item);
+        else if (item.type === 'folder') {
+          selectFolder(item);
+          if (state.expanded.has(item.id)) state.expanded.delete(item.id); else state.expanded.add(item.id);
+          renderTreeItemsRoot(item.id);
+        } else if (item.type === 'file') selectEntry(item);
+      });
       wrapper.append(row); container.append(wrapper);
       if (item.type === 'folder' && expanded && !item.locked && item.children?.length) { const children = document.createElement('div'); children.className = 'tree-children'; wrapper.append(children); renderTreeItems(item.children, children, depth + 1); }
     });
   }
-  async function renderTreeItemsRoot() { await refreshTree(); }
-  function resetPreview() { closePreviewUrl(); state.selectedId = null; state.selectedEntry = null; $('previewTitle').textContent = 'Select a file'; $('previewEyebrow').textContent = 'PREVIEW'; $('previewActions').innerHTML = ''; $('previewContent').className = 'preview-content empty-state'; $('previewContent').innerHTML = '<div class="empty-icon">▧</div><h3>Your private space</h3><p>Select a file in the navigation tree to preview it here.</p>'; }
+  // Handle tree keyboard navigation at the stable tree container, not on
+  // individual rows that are repeatedly destroyed and recreated during folder
+  // expansion. Arrow navigation changes both the focused row and the selected
+  // item, so the preview always follows the current keyboard selection.
+  $('tree').addEventListener('keydown', event => {
+    const row = event.target.closest('.tree-row');
+    if (!row || event.target.closest('.tree-more')) return;
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const rows = [...$('tree').querySelectorAll('.tree-row')];
+    const index = rows.indexOf(row);
+    const nextIndex = index + (event.key === 'ArrowDown' ? 1 : -1);
+    if (index < 0 || nextIndex < 0 || nextIndex >= rows.length) return;
+    const next = rows[nextIndex];
+    const nextItem = findEntry(state.treeItems, next.dataset.id);
+    if (!nextItem) return;
+    event.preventDefault();
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: 'nearest' });
+    selectTreeItem(nextItem);
+  });
+
+  function selectTreeItem(item) {
+    if (item.locked) {
+      state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
+      closePreviewUrl();
+      $('previewTitle').textContent = item.name;
+      $('previewEyebrow').textContent = 'LOCKED ITEM';
+      $('previewActions').innerHTML = '';
+      $('previewContent').className = 'preview-content empty-state';
+      $('previewContent').innerHTML = '<div class="empty-icon">🔒</div><h3>Item locked</h3><p>Unlock this item to access its contents.</p>';
+      askUnlock(item);
+    } else if (item.type === 'folder') selectFolder(item);
+    else if (item.type === 'file') selectEntry(item);
+  }
+  async function renderTreeItemsRoot(focusId = state.selectedId) {
+    await refreshTree();
+    if (focusId) $('tree').querySelector(`.tree-row[data-id="${CSS.escape(focusId)}"]`)?.focus({ preventScroll: true });
+  }
+  function updateTreeSelection() {
+    $('tree').querySelectorAll('.tree-row').forEach(row => {
+      const selected = row.dataset.id === state.selectedId;
+      row.classList.toggle('selected', selected);
+      row.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+  }
+  function resetPreview() { closePreviewUrl(); state.selectedId = null; state.selectedEntry = null; updateTreeSelection(); $('previewTitle').textContent = 'Select a file'; $('previewEyebrow').textContent = 'PREVIEW'; $('previewActions').innerHTML = ''; $('previewContent').className = 'preview-content empty-state'; $('previewContent').innerHTML = '<div class="empty-icon">▧</div><h3>Your private space</h3><p>Select a file in the navigation tree to preview it here.</p>'; }
   function selectFolder(item) {
-    closePreviewUrl(); state.selectedId = item.id; state.selectedEntry = item;
+    closePreviewUrl(); state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
     $('previewTitle').textContent = item.name; $('previewEyebrow').textContent = 'FOLDER'; $('previewActions').innerHTML = '';
     const content = $('previewContent'); content.className = 'preview-content folder-preview empty-state';
     content.innerHTML = '<svg class="folder-preview-art" viewBox="0 0 180 140" role="img" aria-label="Folder"><defs><linearGradient id="folderBack" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#e9ad39"/></linearGradient><linearGradient id="folderFront" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd978"/><stop offset="1" stop-color="#f0b63f"/></linearGradient></defs><path d="M20 33a10 10 0 0 1 10-10h39l14 14h67a10 10 0 0 1 10 10v60a10 10 0 0 1-10 10H30a10 10 0 0 1-10-10Z" fill="url(#folderBack)" stroke="#c58b26" stroke-width="2.5"/><path d="M13 51a10 10 0 0 1 10-10h134a10 10 0 0 1 10 12l-11 59a10 10 0 0 1-10 8H24a10 10 0 0 1-10-12Z" fill="url(#folderFront)" stroke="#c58b26" stroke-width="2.5"/><path d="M36 66h107" stroke="#fff0c4" stroke-width="3" stroke-linecap="round" opacity=".9"/></svg><h3>Folder selected</h3><p>The previous file preview has been cleared. Select a file inside this folder to preview its contents.</p>';
   }
   async function selectEntry(item) {
-    state.selectedId = item.id; state.selectedEntry = item;
+    state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
     $('previewTitle').textContent = item.name; $('previewEyebrow').textContent = 'FILE PREVIEW'; $('previewActions').innerHTML = '';
     const lockButton = document.createElement('button'); lockButton.className = 'secondary-button'; lockButton.textContent = 'Lock'; lockButton.onclick = () => promptLock(item); $('previewActions').append(lockButton);
     $('previewContent').className = 'preview-content'; $('previewContent').innerHTML = '<div class="empty-state"><p>Loading preview…</p></div>';
@@ -149,8 +208,46 @@
     try { const result = await api(`/api/entries/${item.id}/unlock`, {method:'POST', body:JSON.stringify({password})}); await refreshTree(); toast('Item unlocked.'); if (item.type === 'file') { const found = findEntry((await api('/api/tree')).items, item.id); if (found) await selectEntry(found); } }
     catch (e) { toast(e.message); }
   }
-  function openImport(parentId = '', folderMode = null) {
-    state.importParent = parentId;
+  function selectedImportTarget() {
+    if (!state.selectedId) return { id: '', path: 'Root' };
+    let match = null;
+    function walk(items, ancestors) {
+      for (const item of items || []) {
+        const itemAncestors = [...ancestors, item];
+        if (item.id === state.selectedId) {
+          if (item.type === 'folder') {
+            match = { id: item.id, path: itemAncestors.map(entry => entry.name).join(' / ') };
+          } else {
+            const parent = ancestors[ancestors.length - 1];
+            match = { id: parent?.id || '', path: ancestors.length ? ancestors.map(entry => entry.name).join(' / ') : 'Root' };
+          }
+          return true;
+        }
+        if (walk(item.children || [], itemAncestors)) return true;
+      }
+      return false;
+    }
+    walk(state.treeItems, []);
+    return match || { id: '', path: 'Root' };
+  }
+  function openImport(parentId = null, folderMode = null) {
+    const target = parentId === null ? selectedImportTarget() : null;
+    state.importParent = parentId === null ? (target.id || '') : parentId;
+    let destinationPath = target?.path || 'Root';
+    if (parentId !== null && parentId !== '') {
+      let found = null;
+      function walk(items, ancestors) {
+        for (const item of items || []) {
+          const path = [...ancestors, item];
+          if (item.id === parentId) { found = path.map(entry => entry.name).join(' / '); return true; }
+          if (walk(item.children || [], path)) return true;
+        }
+        return false;
+      }
+      walk(state.treeItems, []);
+      destinationPath = found || 'Root';
+    }
+    $('importTargetLocation').textContent = destinationPath;
     $('filePicker').value = ''; $('folderPicker').value = '';
     $('filePicker').classList.toggle('hidden', folderMode === true); $('folderPicker').classList.toggle('hidden', folderMode === false);
     $('importTitle').textContent = folderMode === true ? 'Add a folder' : (folderMode === false ? 'Add files' : 'Add files or folder'); showMessage('importMessage', ''); $('importDialog').showModal();
@@ -305,7 +402,7 @@
   $('aboutButton').addEventListener('click', () => $('aboutDialog').showModal());
   $('refreshButton').addEventListener('click', () => refreshTree().catch(e => toast(e.message)));
   $('trashButton').addEventListener('click', () => showTrash().catch(e => toast(e.message)));
-  $('importRootButton').addEventListener('click', () => openImport('', null));
+  $('importRootButton').addEventListener('click', () => openImport(null, null));
   $('startImportButton').addEventListener('click', runImport);
   $('themeSelect').addEventListener('change', async () => { applyTheme($('themeSelect').value); try { await api('/api/settings',{method:'PUT',body:JSON.stringify({theme:state.theme})}); } catch(e) { toast(e.message); } });
   $('moveVaultButton').addEventListener('click', moveVault);
@@ -338,13 +435,14 @@
   }, {passive:true}));
   window.addEventListener('storage', event => { if (event.key === 'mps-last-activity' && Number(event.newValue)) state.lastActivity = Math.max(state.lastActivity, Number(event.newValue)); });
   function clearSensitiveUi() {
+    clearAllMessages();
     closePreviewUrl();
     document.querySelectorAll('#previewContent audio, #previewContent video').forEach(m => { try { m.pause(); m.removeAttribute('src'); m.load(); } catch {} });
     document.querySelectorAll('dialog[open]').forEach(dialog => { try { dialog.close(); } catch {} });
     $('tree').replaceChildren(); state.selectedId=null; state.selectedEntry=null; state.importParent=''; state.expanded.clear(); state.unlocked=false;
     setVaultLabel(''); $('unlockPassword').value=''; $('vaultPicker').replaceChildren(); $('managedVaultSelect').replaceChildren();
     $('settingsVaultLabel').textContent=''; $('settingsVaultPrefix').textContent=''; $('newTargetDirectory').value='';
-    $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); resetPreview(); showScreen('unlockScreen');
+    $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); resetPreview(); showMessage('unlockMessage', ''); showScreen('unlockScreen');
   }
   setInterval(() => {
     try { state.lastActivity = Math.max(state.lastActivity, Number(localStorage.getItem('mps-last-activity') || 0)); } catch {}

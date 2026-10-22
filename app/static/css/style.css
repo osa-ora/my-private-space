@@ -1,1 +1,11 @@
 .unsupported-file-art{display:block;width:104px;height:122px;margin:0 auto 6px;filter:drop-shadow(0 5px 8px rgba(20,40,75,.10))}
+
+.import-target-location {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border, #d9dee8);
+  border-radius: 0.55rem;
+  background: var(--surface-muted, #f5f7fa);
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+}
+.import-target-location strong { margin-right: 0.3rem; }

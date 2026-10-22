@@ -43,6 +43,24 @@ def test_vault_flow(monkeypatch):
         initial_config = main_module.normalize_config(main_module.decrypt_json(
             main_module.password_key("Abc@1234"), main_module.CONFIG_PATH.read_bytes(), b"mps:config:v1"))
         assert initial_config["vaults"][0].get("manage_visibility", False) is False
+        assert initial_config["last_used_vault"] == initial_config["vaults"][0]["id"]
+
+        # The first manual/timeout lock after setup should resume directly into
+        # the vault rather than showing the vault picker message.
+        client.post("/api/lock", headers=H)
+        first_resume = client.post("/api/unlock", headers=H, json={"password": "Abc@1234", "resume_last_used": True})
+        assert first_resume.status_code == 200 and first_resume.json()["selected"] is True
+        assert first_resume.json()["vault_label"] == "Personal"
+
+        # Older registries with no last-used ID should still resume a vault
+        # after a lock rather than returning selected=False.
+        legacy_config = main_module.normalize_config(main_module.decrypt_json(
+            main_module.password_key("Abc@1234"), main_module.CONFIG_PATH.read_bytes(), b"mps:config:v1"))
+        legacy_config["last_used_vault"] = None
+        main_module.save_config(main_module.password_key("Abc@1234"), legacy_config)
+        client.post("/api/lock", headers=H)
+        legacy_resume = client.post("/api/unlock", headers=H, json={"password": "Abc@1234", "resume_last_used": True})
+        assert legacy_resume.status_code == 200 and legacy_resume.json()["selected"] is True
 
         visibility_calls = []
         monkeypatch.setattr(main_module, "set_directory_hidden", lambda path, hidden: visibility_calls.append((Path(path), hidden)) or True)

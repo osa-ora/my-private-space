@@ -499,7 +499,10 @@ def setup(payload: SetupRequest):
         manifest = {"version": 1, "next_id": 1, "created_at": now_iso(), "entries": {}}
         blob = encrypt_json(key, manifest, b"mps:manifest:v1")
         atomic_write(manifest_path(root), blob)
-        initial_config = {"version": 2, "vaults": [{"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix, "manage_visibility": payload.manage_visibility}], "last_used_vault": None}
+        initial_vault = {"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix, "manage_visibility": payload.manage_visibility}
+        # The first vault is immediately opened after setup, so persist it as
+        # the last-used vault for the first manual/timeout unlock as well.
+        initial_config = {"version": 2, "vaults": [initial_vault], "last_used_vault": initial_vault["id"]}
         try:
             save_config(key, initial_config)
             if payload.manage_visibility:
@@ -539,6 +542,11 @@ def unlock(payload: PasswordRequest):
             # selection (for example, on first login to a multi-vault registry).
             last_used_id = config.get("last_used_vault")
             v = next((item for item in config["vaults"] if item["id"] == last_used_id), None) if payload.resume_last_used else None
+            # Older registries may not have a valid last-used vault recorded.
+            # After a lock, resume a valid registered vault instead of leaving
+            # the user on the vault-picker path.
+            if payload.resume_last_used and v is None and config["vaults"]:
+                v = config["vaults"][0]
             if v is not None:
                 root = Path(v["location"]).expanduser().resolve()
                 if not root.is_dir(): raise HTTPException(404, "The configured vault directory is unavailable. Locate the vault folder before continuing.")

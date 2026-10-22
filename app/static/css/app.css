@@ -19,3 +19,5 @@
 @media(max-width:560px){.topbar{padding:0 10px}.brand{gap:7px;font-size:15px;letter-spacing:-.35px}.brand-mark{width:34px;height:34px;flex-basis:34px}.top-actions{gap:5px}.top-actions .icon-button{width:36px;height:36px;min-width:36px;flex-basis:36px}.top-actions .icon-button svg{width:23px;height:23px}#settingsButton svg{width:25px;height:25px}}
 
 .about-version{display:block;margin-top:5px;font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--muted)}
+
+.tree-row:focus-visible{outline:2px solid #5488c8;outline-offset:1px}

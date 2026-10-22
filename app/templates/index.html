@@ -7,7 +7,7 @@
   <meta name="color-scheme" content="light dark">
   <title>{{ app_name }}</title>
   <link rel="stylesheet" href="/static/css/app.css">
-  <script defer src="/static/js/app.js?v=3"></script>
+  <script defer src="/static/js/app.js?v=13"></script>
 </head>
 <body data-theme="light-navy">
   <header class="topbar">
@@ -165,6 +165,7 @@
     <form method="dialog" class="modal-head"><div><div class="eyebrow">IMPORT</div><h2 id="importTitle">Add files or folder</h2></div><button class="icon-button" value="cancel" aria-label="Close import">×</button></form>
     <div class="modal-body form-stack">
       <p class="muted">Original source files are not changed. Folder imports preserve their relative hierarchy.</p>
+      <div class="import-target-location"><strong>Target location:</strong> <span id="importTargetLocation">Root</span></div>
       <label for="filePicker">Choose files</label><input id="filePicker" type="file" multiple>
       <label for="folderPicker">Or choose a folder</label><input id="folderPicker" type="file" webkitdirectory multiple>
       <button id="startImportButton" class="primary-button" type="button">Import selected items</button>
