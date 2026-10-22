@@ -59,7 +59,7 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 # One process-wide token, rendered only into the same-origin UI and required for API requests.
 API_TOKEN = secrets.token_urlsafe(32)
-STATE: dict[str, Any] = {"root": None, "key": None, "manifest": None, "unlocked": False, "vaults": [], "active_vault_id": None, "active_vault_label": None, "pending_config": None, "last_activity": None}
+STATE: dict[str, Any] = {"root": None, "key": None, "manifest": None, "unlocked": False, "vaults": [], "active_vault_id": None, "active_vault_label": None, "active_vault_type": "file", "pending_config": None, "last_activity": None}
 MUTATION_LOCK = threading.RLock()
 
 
@@ -106,7 +106,7 @@ def record_auth_success() -> None:
     _write_login_state(LOGIN_STATE)
 
 def expire_session() -> None:
-    STATE.update(root=None, key=None, manifest=None, unlocked=False, vaults=[], active_vault_id=None, active_vault_label=None, pending_config=None, last_activity=None)
+    STATE.update(root=None, key=None, manifest=None, unlocked=False, vaults=[], active_vault_id=None, active_vault_label=None, active_vault_type="file", pending_config=None, last_activity=None)
 
 def touch_session() -> None:
     STATE["last_activity"] = time.monotonic()
@@ -300,7 +300,10 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
         manage_visibility = v.get("manage_visibility", False)
         if not isinstance(manage_visibility, bool):
             raise ValueError("Invalid vault visibility setting")
-        normalized = {"id": vid, "label": label.strip(), "location": str(Path(location).expanduser().resolve()), **({"prefix": prefix} if prefix else {})}
+        vault_type = v.get("type", "file")
+        if vault_type not in {"file", "password"}:
+            raise ValueError("Invalid vault type")
+        normalized = {"id": vid, "label": label.strip(), "location": str(Path(location).expanduser().resolve()), "type": vault_type, **({"prefix": prefix} if prefix else {})}
         if "manage_visibility" in v:
             normalized["manage_visibility"] = manage_visibility
         vaults.append(normalized)
@@ -400,7 +403,7 @@ def public_tree(manifest: dict[str, Any]) -> dict[str, Any]:
                 item["children"] = build(eid)
             result.append(item)
         return sorted(result, key=lambda x: (x["type"] != "folder", x["name"].casefold()))
-    return {"items": build(None), "trash_count": sum(1 for e in entries.values() if e.get("deleted"))}
+    return {"items": build(None), "trash_count": sum(1 for e in entries.values() if e.get("deleted")), "vault_type": manifest.get("vault_type", "file")}
 
 
 def check_password_key(password: str) -> bytes:
@@ -461,6 +464,7 @@ class SetupRequest(BaseModel):
     label: str = Field(min_length=1, max_length=80)
     prefix: str = Field(min_length=1, max_length=32)
     manage_visibility: bool = False
+    vault_type: str = "file"
     password: str
     confirm_password: str
 
@@ -477,6 +481,9 @@ def setup(payload: SetupRequest):
         if not label: raise HTTPException(400, "Vault label is required.")
         prefix = payload.prefix.strip()
         if not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", prefix): raise HTTPException(400, "Prefix may contain only letters, digits, hyphens, and underscores.")
+        vault_type = payload.vault_type
+        if vault_type not in {"file", "password"}:
+            raise HTTPException(400, "Choose either a file vault or a password vault.")
         root = Path(payload.target_directory).expanduser().resolve()
         if not root.exists() or not root.is_dir():
             raise HTTPException(400, "Choose an existing directory for the vault.")
@@ -496,10 +503,10 @@ def setup(payload: SetupRequest):
         # Remove Finder metadata before creating the vault if present.
         (root / ".DS_Store").unlink(missing_ok=True)
         key = password_key(payload.password)
-        manifest = {"version": 1, "next_id": 1, "created_at": now_iso(), "entries": {}}
+        manifest = {"version": 1, "vault_type": vault_type, "next_id": 1, "created_at": now_iso(), "entries": {}}
         blob = encrypt_json(key, manifest, b"mps:manifest:v1")
         atomic_write(manifest_path(root), blob)
-        initial_vault = {"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix, "manage_visibility": payload.manage_visibility}
+        initial_vault = {"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix, "type": vault_type, "manage_visibility": payload.manage_visibility}
         # The first vault is immediately opened after setup, so persist it as
         # the last-used vault for the first manual/timeout unlock as well.
         initial_config = {"version": 2, "vaults": [initial_vault], "last_used_vault": initial_vault["id"]}
@@ -515,8 +522,8 @@ def setup(payload: SetupRequest):
             raise HTTPException(500, f"Vault setup could not be completed safely: {exc}")
         config = normalize_config(decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1"))
         manifest["_prefix"] = prefix
-        STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=config["vaults"][0]["id"], active_vault_label=label, pending_config=None, last_activity=time.monotonic())
-        return {"ok": True, "message": "Vault created.", "vault_label": label, "vaults": config["vaults"]}
+        STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=config["vaults"][0]["id"], active_vault_label=label, active_vault_type=vault_type, pending_config=None, last_activity=time.monotonic())
+        return {"ok": True, "message": "Vault created.", "vault_label": label, "vault_type": vault_type, "vaults": config["vaults"]}
 
 
 class PasswordRequest(BaseModel):
@@ -552,15 +559,18 @@ def unlock(payload: PasswordRequest):
                 if not root.is_dir(): raise HTTPException(404, "The configured vault directory is unavailable. Locate the vault folder before continuing.")
                 manifest = decrypt_json(key, manifest_path(root).read_bytes(), b"mps:manifest:v1")
                 if manifest.get("version") != 1 or not isinstance(manifest.get("entries"), dict): raise ValueError("Invalid manifest format")
+                manifest_type = manifest.get("vault_type", "file")
+                if manifest_type != v.get("type", "file"):
+                    raise ValueError("Vault type does not match its registry entry")
                 config["last_used_vault"] = v["id"]
                 if raw_config != config: save_config(key, config)
                 manifest["_prefix"] = v.get("prefix", "")
-                STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=v["id"], active_vault_label=v["label"], pending_config=None, last_activity=time.monotonic())
+                STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=v["id"], active_vault_label=v["label"], active_vault_type=manifest_type, pending_config=None, last_activity=time.monotonic())
                 record_auth_success()
-                return {"ok": True, "selected": True, "vault_label": v["label"], "vaults": config["vaults"]}
-            STATE.update(root=None, key=key, manifest=None, unlocked=False, vaults=config["vaults"], active_vault_id=None, active_vault_label=None, pending_config=config, last_activity=time.monotonic())
+                return {"ok": True, "selected": True, "vault_label": v["label"], "vault_type": manifest_type, "vaults": config["vaults"]}
+            STATE.update(root=None, key=key, manifest=None, unlocked=False, vaults=config["vaults"], active_vault_id=None, active_vault_label=None, active_vault_type="file", pending_config=config, last_activity=time.monotonic())
             record_auth_success()
-            return {"ok": True, "selected": False, "vaults": [{"id": v["id"], "label": v["label"], "location": v["location"]} for v in config["vaults"]]}
+            return {"ok": True, "selected": False, "vaults": [{"id": v["id"], "label": v["label"], "location": v["location"], "type": v.get("type", "file")} for v in config["vaults"]]}
         except HTTPException: raise
         except Exception:
             record_auth_failure()
@@ -592,13 +602,16 @@ def select_vault(payload: SelectVaultRequest):
             if not root.is_dir(): raise HTTPException(404, f"Vault '{vault['label']}' is unavailable. Locate or restore its folder.")
             manifest = decrypt_json(key, manifest_path(root).read_bytes(), b"mps:manifest:v1")
             if manifest.get("version") != 1 or not isinstance(manifest.get("entries"), dict): raise ValueError("Invalid manifest")
+            manifest_type = manifest.get("vault_type", "file")
+            if manifest_type != vault.get("type", "file"):
+                raise ValueError("Vault type does not match its registry entry")
         except HTTPException: raise
         except Exception: raise HTTPException(400, f"Vault '{vault['label']}' is invalid or damaged; no files were changed.")
         config["last_used_vault"] = vault["id"]
         save_config(key, config)
         manifest["_prefix"] = vault.get("prefix", "")
-        STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=vault["id"], active_vault_label=vault["label"], pending_config=None, last_activity=time.monotonic())
-        return {"ok": True, "vault_label": vault["label"], "vaults": config["vaults"]}
+        STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=vault["id"], active_vault_label=vault["label"], active_vault_type=manifest_type, pending_config=None, last_activity=time.monotonic())
+        return {"ok": True, "vault_label": vault["label"], "vault_type": manifest_type, "vaults": config["vaults"]}
 
 
 @app.post("/api/vaults/remove")
@@ -669,7 +682,7 @@ def remove_vault(payload: SelectVaultRequest):
             fallback_manifest["_prefix"] = fallback_vault.get("prefix", "")
             STATE.update(root=fallback_root, manifest=fallback_manifest, unlocked=True,
                          active_vault_id=fallback_vault["id"], active_vault_label=fallback_vault["label"],
-                         pending_config=None, last_activity=time.monotonic())
+                         active_vault_type=fallback_manifest.get("vault_type", "file"), pending_config=None, last_activity=time.monotonic())
         if STATE.get("pending_config") is not None:
             STATE["pending_config"] = config
         return {"ok": True, "vaults": config["vaults"], "removed_label": vault["label"],
@@ -683,6 +696,7 @@ class CreateVaultRequest(BaseModel):
     prefix: str = Field(min_length=1, max_length=32)
     convert_existing: bool = False
     manage_visibility: bool = False
+    vault_type: str = "file"
 
 
 @app.post("/api/vaults/create")
@@ -694,6 +708,10 @@ def create_vault(payload: CreateVaultRequest):
         if not label: raise HTTPException(400, "Vault label is required.")
         prefix = payload.prefix.strip()
         if not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", prefix): raise HTTPException(400, "Prefix may contain only letters, digits, hyphens, and underscores.")
+        vault_type = payload.vault_type
+        if vault_type not in {"file", "password"}: raise HTTPException(400, "Choose either a file vault or a password vault.")
+        if vault_type == "password" and payload.convert_existing:
+            raise HTTPException(400, "Ordinary folder conversion is only available for file vaults.")
         config = normalize_config(decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1"))
         if any(v["label"].casefold() == label.casefold() for v in config["vaults"]): raise HTTPException(409, "A vault with this label already exists.")
         root = Path(payload.target_directory).expanduser().resolve()
@@ -721,15 +739,17 @@ def create_vault(payload: CreateVaultRequest):
         if not existing_items:
             # New vault: initialize only when the directory is genuinely empty.
             (root / ".DS_Store").unlink(missing_ok=True)
-            manifest = {"version": 1, "next_id": 1, "created_at": now_iso(), "entries": {}}
+            manifest = {"version": 1, "vault_type": vault_type, "next_id": 1, "created_at": now_iso(), "entries": {}}
             atomic_write(manifest_file, encrypt_json(key, manifest, b"mps:manifest:v1"))
             created_new_manifest = True
         else:
             # Re-register a previously removed vault without overwriting its encrypted data.
             if not manifest_file.is_file():
                 if not payload.convert_existing:
+                    if vault_type == "password":
+                        raise HTTPException(409, "A new password vault must use an empty directory, or select an existing password-vault directory.")
                     raise HTTPException(409, "This folder contains ordinary files. Confirm conversion to encrypted vault storage to continue; originals are preserved until verification.")
-                manifest = {"version": 1, "next_id": 1, "created_at": now_iso(), "entries": {}}
+                manifest = {"version": 1, "vault_type": "file", "next_id": 1, "created_at": now_iso(), "entries": {}}
                 stage = root.parent / (".mps-convert-" + secrets.token_hex(8))
                 backup = root.parent / (".mps-original-" + secrets.token_hex(8))
                 try:
@@ -780,6 +800,10 @@ def create_vault(payload: CreateVaultRequest):
                             or not isinstance(manifest.get("entries"), dict)
                             or not isinstance(manifest.get("next_id"), int)):
                         raise ValueError("Invalid manifest structure")
+                    manifest_type = manifest.get("vault_type", "file")
+                    if manifest_type != vault_type:
+                        raise ValueError("Requested vault type does not match existing vault")
+                    manifest["vault_type"] = manifest_type
                     entries = manifest["entries"]
                     expected_top = {eid for eid, entry in entries.items()
                                     if isinstance(entry, dict) and entry.get("parent_id") is None}
@@ -792,8 +816,9 @@ def create_vault(payload: CreateVaultRequest):
                         physical = root / eid
                         if not physical.exists() or (entry.get("type") == "folder") != physical.is_dir():
                             raise ValueError("Vault content does not match its manifest")
+                    allowed_entry_types = {"file", "folder"} if vault_type == "file" else {"password"}
                     if any(not isinstance(eid, str) or not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", eid) or not isinstance(entry, dict)
-                           or entry.get("type") not in {"file", "folder"}
+                           or entry.get("type") not in allowed_entry_types
                            for eid, entry in entries.items()):
                         raise ValueError("Invalid entry metadata")
                     for eid, entry in entries.items():
@@ -803,11 +828,12 @@ def create_vault(payload: CreateVaultRequest):
                         else:
                             if not physical.is_file(): raise ValueError("Missing physical file")
                             if not entry.get("locked") and not entry.get("hidden_by"):
-                                decrypt_bytes(key, physical.read_bytes(), f"mps:file:{eid}:v1".encode())
+                                aad = f"mps:password:{eid}:v1".encode() if entry.get("type") == "password" else f"mps:file:{eid}:v1".encode()
+                                decrypt_bytes(key, physical.read_bytes(), aad)
                 except Exception:
                     raise HTTPException(409, "This folder contains data that could not be verified as a vault for the current main password. Nothing was changed.")
 
-        vault = {"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix, "manage_visibility": payload.manage_visibility}
+        vault = {"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix, "type": vault_type, "manage_visibility": payload.manage_visibility}
         config["vaults"].append(vault); config["last_used_vault"] = vault["id"]
         try:
             save_config(key, config)
@@ -837,8 +863,8 @@ def create_vault(payload: CreateVaultRequest):
         if conversion_backup is not None:
             shutil.rmtree(conversion_backup, ignore_errors=True)
         manifest["_prefix"] = prefix
-        STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=vault["id"], active_vault_label=label, pending_config=None, last_activity=time.monotonic())
-        return {"ok": True, "vault_label": label, "vaults": config["vaults"], "reused_existing_vault": not created_new_manifest}
+        STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=vault["id"], active_vault_label=label, active_vault_type=vault_type, pending_config=None, last_activity=time.monotonic())
+        return {"ok": True, "vault_label": label, "vault_type": vault_type, "vaults": config["vaults"], "reused_existing_vault": not created_new_manifest}
 
 
 @app.post("/api/lock")
@@ -870,7 +896,7 @@ def preview(entry_id: str):
     if not entry or entry.get("deleted"):
         raise HTTPException(404, "Item not found.")
     if entry["type"] != "file":
-        raise HTTPException(400, "Select a file to preview.")
+        raise HTTPException(400, "Only files can use the file preview endpoint.")
     if entry.get("locked") or has_locked_ancestor(manifest, entry):
         raise HTTPException(423, "This item is locked.")
     try:
@@ -904,6 +930,8 @@ def preview(entry_id: str):
 async def import_files(parent_id: str = Form(default=""), relative_paths: str = Form(default="[]"), files: list[UploadFile] = File(...)):
     with MUTATION_LOCK:
         root, key, manifest = require_unlocked()
+        if manifest.get("vault_type", "file") != "file":
+            raise HTTPException(400, "File and folder imports are available only in file vaults.")
         parent = parent_id or None
         if parent is not None:
             p = manifest["entries"].get(parent)
@@ -972,6 +1000,83 @@ async def import_files(parent_id: str = Form(default=""), relative_paths: str = 
         return {"ok": True, "imported": len(files)}
 
 
+class PasswordEntryRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    value: str = Field(min_length=1, max_length=10000)
+
+
+def require_password_vault() -> tuple[Path, bytes, dict[str, Any]]:
+    root, key, manifest = require_unlocked()
+    if manifest.get("vault_type", "file") != "password":
+        raise HTTPException(400, "Password entries are available only in password vaults.")
+    return root, key, manifest
+
+
+def require_password_entry(entry_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
+    entry = manifest["entries"].get(entry_id)
+    if not entry or entry.get("deleted") or entry.get("type") != "password":
+        raise HTTPException(404, "Password entry not found.")
+    return entry
+
+
+@app.post("/api/passwords")
+def create_password_entry(payload: PasswordEntryRequest):
+    with MUTATION_LOCK:
+        root, key, manifest = require_password_vault()
+        name = payload.name.strip()
+        if not name or not payload.value:
+            raise HTTPException(400, "A name and password value are required.")
+        old_manifest = json.loads(json.dumps(manifest))
+        entry_id = allocate_id(manifest)
+        entry = {"name": name, "type": "password", "parent_id": None, "mime": "application/x-mps-password", "size": len(payload.value.encode("utf-8")), "created_at": now_iso(), "deleted": False, "locked": False}
+        manifest["entries"][entry_id] = entry
+        path = entry_path(entry_id, manifest, root)
+        try:
+            atomic_write(path, encrypt_bytes(key, payload.value.encode("utf-8"), f"mps:password:{entry_id}:v1".encode()))
+            save_manifest()
+        except Exception as exc:
+            STATE["manifest"] = old_manifest
+            path.unlink(missing_ok=True)
+            if isinstance(exc, HTTPException): raise
+            raise HTTPException(500, f"Could not save password entry: {exc}")
+        return {"ok": True, "id": entry_id, "name": name}
+
+
+@app.get("/api/passwords/{entry_id}/reveal")
+def reveal_password_entry(entry_id: str):
+    root, key, manifest = require_password_vault()
+    entry = require_password_entry(entry_id, manifest)
+    try:
+        value = decrypt_bytes(key, entry_path(entry_id, manifest, root).read_bytes(), f"mps:password:{entry_id}:v1".encode()).decode("utf-8")
+    except Exception:
+        raise HTTPException(500, "This password entry could not be decrypted; the vault may be damaged.")
+    return JSONResponse({"id": entry_id, "name": entry["name"], "value": value}, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+
+
+@app.put("/api/passwords/{entry_id}")
+def update_password_entry(entry_id: str, payload: PasswordEntryRequest):
+    with MUTATION_LOCK:
+        root, key, manifest = require_password_vault()
+        entry = require_password_entry(entry_id, manifest)
+        name = payload.name.strip()
+        if not name or not payload.value:
+            raise HTTPException(400, "A name and password value are required.")
+        path = entry_path(entry_id, manifest, root)
+        old_blob = path.read_bytes()
+        old_name, old_size = entry["name"], entry.get("size", 0)
+        try:
+            atomic_write(path, encrypt_bytes(key, payload.value.encode("utf-8"), f"mps:password:{entry_id}:v1".encode()))
+            entry["name"] = name
+            entry["size"] = len(payload.value.encode("utf-8"))
+            save_manifest()
+        except Exception as exc:
+            atomic_write(path, old_blob)
+            entry["name"], entry["size"] = old_name, old_size
+            if isinstance(exc, HTTPException): raise
+            raise HTTPException(500, f"Could not update password entry: {exc}")
+        return {"ok": True, "id": entry_id, "name": name}
+
+
 class EntryAction(BaseModel):
     password: str | None = None
     destination_parent_id: str | None = None
@@ -980,11 +1085,12 @@ class EntryAction(BaseModel):
 
 def reencrypt_entry_file(root: Path, old_key: bytes, new_key: bytes, entry_id: str, manifest: dict[str, Any]) -> None:
     entry = manifest["entries"][entry_id]
-    if entry["type"] != "file":
+    if entry["type"] not in {"file", "password"}:
         return
     path = entry_path(entry_id, manifest, root)
-    plain = decrypt_bytes(old_key, path.read_bytes(), f"mps:file:{entry_id}:v1".encode())
-    atomic_write(path, encrypt_bytes(new_key, plain, f"mps:file:{entry_id}:v1".encode()))
+    aad = f"mps:password:{entry_id}:v1".encode() if entry["type"] == "password" else f"mps:file:{entry_id}:v1".encode()
+    plain = decrypt_bytes(old_key, path.read_bytes(), aad)
+    atomic_write(path, encrypt_bytes(new_key, plain, aad))
 
 
 @app.post("/api/entries/{entry_id}/lock")
@@ -994,6 +1100,8 @@ def lock_entry(entry_id: str, payload: EntryAction):
         entry = manifest["entries"].get(entry_id)
         if not entry or entry.get("deleted"):
             raise HTTPException(404, "Item not found.")
+        if entry.get("type") == "password":
+            raise HTTPException(400, "Password entries are protected by the main vault password and cannot use secondary item locks.")
         if entry.get("locked") or has_locked_ancestor(manifest, entry):
             raise HTTPException(409, "Item is already locked or inside a locked folder.")
         if not payload.password or len(payload.password) != 8:
@@ -1160,6 +1268,8 @@ def export_entry(entry_id: str, payload: ExportRequest):
         entry = manifest["entries"].get(entry_id)
         if not entry or entry.get("deleted"):
             raise HTTPException(404, "Active vault item not found.")
+        if entry.get("type") == "password":
+            raise HTTPException(400, "Password entries cannot be exported as files.")
         destination = Path(payload.destination_directory).expanduser().resolve()
         if not destination.exists() or not destination.is_dir():
             raise HTTPException(400, "Choose an existing destination directory.")
@@ -1305,8 +1415,8 @@ def permanently_delete(entry_id: str, confirm: bool = False):
 
 @app.get("/api/settings")
 def get_settings():
-    root, _, _ = require_unlocked()
-    return {"theme": "light-navy", "target_directory": str(root), "vault_label": STATE.get("active_vault_label", ""), "prefix": next((v.get("prefix", "") for v in STATE.get("vaults", []) if v["id"] == STATE.get("active_vault_id")), ""), "vaults": STATE.get("vaults", [])}
+    root, _, manifest = require_unlocked()
+    return {"theme": "light-navy", "target_directory": str(root), "vault_label": STATE.get("active_vault_label", ""), "vault_type": manifest.get("vault_type", "file"), "prefix": next((v.get("prefix", "") for v in STATE.get("vaults", []) if v["id"] == STATE.get("active_vault_id")), ""), "vaults": STATE.get("vaults", [])}
 
 
 class TargetDirectoryRequest(BaseModel):
@@ -1439,30 +1549,33 @@ def change_password(payload: ChangePasswordRequest):
                 staged_item = {"vault":vault,"root":vroot,"stage":stage,"backup":backup,"manifest":vm,"old_manifest":old_manifest_blob}
                 staged.append(staged_item)
                 files_backup: list[tuple[str, bytes]] = []
+                allowed_types = {"file", "folder"} if vm.get("vault_type", "file") == "file" else {"password"}
                 for eid, entry in vm["entries"].items():
-                    if not isinstance(eid, str) or not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", eid) or not isinstance(entry, dict) or entry.get("type") not in {"file", "folder"}:
+                    if not isinstance(eid, str) or not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", eid) or not isinstance(entry, dict) or entry.get("type") not in allowed_types:
                         raise ValueError(f"Vault '{vault['label']}' contains invalid entry metadata")
                     path = entry_path(eid, vm, vroot)
                     if entry.get("type") == "folder":
                         if not path.is_dir(): raise ValueError(f"Vault '{vault['label']}' is missing folder {eid}")
                         continue
-                    if not path.is_file(): raise ValueError(f"Vault '{vault['label']}' is missing file {eid}")
+                    if not path.is_file(): raise ValueError(f"Vault '{vault['label']}' is missing entry data {eid}")
                     blob = path.read_bytes()
-                    # Secondary-locked files are encrypted with their own password and must remain byte-identical.
                     if entry.get("locked") or entry.get("hidden_by"): continue
-                    plain = decrypt_bytes(old_key, blob, f"mps:file:{eid}:v1".encode())
+                    aad = f"mps:password:{eid}:v1".encode() if entry.get("type") == "password" else f"mps:file:{eid}:v1".encode()
+                    plain = decrypt_bytes(old_key, blob, aad)
                     staged_path = entry_path(eid, vm, stage)
-                    atomic_write(staged_path, encrypt_bytes(new_key, plain, f"mps:file:{eid}:v1".encode()))
+                    atomic_write(staged_path, encrypt_bytes(new_key, plain, aad))
                     files_backup.append((eid, blob))
                 atomic_write(manifest_path(stage), encrypt_json(new_key, vm, b"mps:manifest:v1"))
                 check = decrypt_json(new_key, manifest_path(stage).read_bytes(), b"mps:manifest:v1")
                 if check != vm: raise ValueError(f"Vault '{vault['label']}' staged manifest verification failed")
                 for eid, entry in vm["entries"].items():
-                    if entry.get("type") == "file":
+                    if entry.get("type") in {"file", "password"}:
                         staged_blob = entry_path(eid, vm, stage).read_bytes()
                         if entry.get("locked") or entry.get("hidden_by"):
                             if staged_blob != entry_path(eid, vm, vroot).read_bytes(): raise ValueError("Secondary-locked content changed during staging")
-                        else: decrypt_bytes(new_key, staged_blob, f"mps:file:{eid}:v1".encode())
+                        else:
+                            aad = f"mps:password:{eid}:v1".encode() if entry.get("type") == "password" else f"mps:file:{eid}:v1".encode()
+                            decrypt_bytes(new_key, staged_blob, aad)
             atomic_write(config_backup, CONFIG_PATH.read_bytes())
             config_backup_created = True
             journal_records = [{"root":str(x["root"]),"stage":str(x["stage"]),"backup":str(x["backup"])} for x in staged]

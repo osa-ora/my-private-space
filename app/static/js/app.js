@@ -2,9 +2,9 @@
   'use strict';
   const token = document.querySelector('meta[name="mps-token"]').content;
   const $ = (id) => document.getElementById(id);
-  const state = { unlocked: false, selectedId: null, selectedEntry: null, importParent: '', treeItems: [], expanded: new Set(), theme: localStorage.getItem('mps-theme') || 'light-navy', previewUrl: null, lastActivity: Date.now(), idleLocked: false };
+  const state = { unlocked: false, selectedId: null, selectedEntry: null, importParent: '', treeItems: [], expanded: new Set(), theme: localStorage.getItem('mps-theme') || 'light-navy', previewUrl: null, lastActivity: Date.now(), idleLocked: false, vaultType: 'file' };
   const screens = ['setupScreen', 'unlockScreen', 'workspace'];
-  const dialogs = ['settingsDialog', 'createVaultDialog', 'switchVaultDialog', 'helpDialog', 'trashDialog', 'contextDialog', 'importDialog', 'exportDialog'];
+  const dialogs = ['settingsDialog', 'createVaultDialog', 'switchVaultDialog', 'helpDialog', 'trashDialog', 'contextDialog', 'importDialog', 'exportDialog', 'passwordEntryDialog'];
 
   async function api(path, options = {}) {
     const headers = new Headers(options.headers || {});
@@ -33,6 +33,7 @@
     const data = await api('/api/tree');
     $('trashCount').textContent = data.trash_count;
     state.treeItems = data.items || [];
+    setVaultType(data.vault_type || 'file');
     $('tree').innerHTML = '';
     renderTreeItems(state.treeItems, $('tree'), 0);
     if (state.selectedId) {
@@ -50,7 +51,7 @@
       const expanded = state.expanded.has(item.id);
       const chevron = document.createElement('span'); chevron.className = 'tree-chevron'; chevron.textContent = item.type === 'folder' ? (item.locked ? '•' : (hasChildren ? (expanded ? '▾' : '▸') : '')) : '';
       const icon = document.createElement('span'); icon.className = `tree-icon${item.type === 'folder' && !item.locked ? ' folder-tree-icon' : ''}`;
-      if (item.type === 'folder' && !item.locked) { icon.innerHTML = '<svg viewBox="0 0 32 26" aria-hidden="true"><path d="M2.5 5.5A3 3 0 0 1 5.5 2.5h7l3 3h11A3 3 0 0 1 29.5 8.5v12a3 3 0 0 1-3 3h-21a3 3 0 0 1-3-3Z" fill="#e6b957" stroke="#b98527" stroke-width="1.5"/><path d="M2.5 10h27l-2.2 10.5a3 3 0 0 1-2.9 2.3H5.5a3 3 0 0 1-3-3Z" fill="#ffd978" stroke="#b98527" stroke-width="1.2"/></svg>'; } else { icon.textContent = item.locked ? '🔒' : '▤'; }
+      if (item.type === 'folder' && !item.locked) { icon.innerHTML = '<svg viewBox="0 0 32 26" aria-hidden="true"><path d="M2.5 5.5A3 3 0 0 1 5.5 2.5h7l3 3h11A3 3 0 0 1 29.5 8.5v12a3 3 0 0 1-3 3h-21a3 3 0 0 1-3-3Z" fill="#e6b957" stroke="#b98527" stroke-width="1.5"/><path d="M2.5 10h27l-2.2 10.5a3 3 0 0 1-2.9 2.3H5.5a3 3 0 0 1-3-3Z" fill="#ffd978" stroke="#b98527" stroke-width="1.2"/></svg>'; } else { icon.textContent = item.locked ? '🔒' : (item.type === 'password' ? '🔑' : '▤'); }
       const name = document.createElement('span'); name.className = 'tree-name'; name.textContent = item.name;
       row.append(chevron, icon, name);
       if (item.locked) { const lock = document.createElement('span'); lock.className = 'tree-icon'; lock.textContent = '•'; row.append(lock); }
@@ -63,6 +64,7 @@
           if (state.expanded.has(item.id)) state.expanded.delete(item.id); else state.expanded.add(item.id);
           renderTreeItemsRoot(item.id);
         } else if (item.type === 'file') selectEntry(item);
+        else if (item.type === 'password') selectPassword(item);
       });
       wrapper.append(row); container.append(wrapper);
       if (item.type === 'folder' && expanded && !item.locked && item.children?.length) { const children = document.createElement('div'); children.className = 'tree-children'; wrapper.append(children); renderTreeItems(item.children, children, depth + 1); }
@@ -101,6 +103,7 @@
       askUnlock(item);
     } else if (item.type === 'folder') selectFolder(item);
     else if (item.type === 'file') selectEntry(item);
+    else if (item.type === 'password') selectPassword(item);
   }
   async function renderTreeItemsRoot(focusId = state.selectedId) {
     await refreshTree();
@@ -120,6 +123,40 @@
     const content = $('previewContent'); content.className = 'preview-content folder-preview empty-state';
     content.innerHTML = '<svg class="folder-preview-art" viewBox="0 0 180 140" role="img" aria-label="Folder"><defs><linearGradient id="folderBack" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#e9ad39"/></linearGradient><linearGradient id="folderFront" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd978"/><stop offset="1" stop-color="#f0b63f"/></linearGradient></defs><path d="M20 33a10 10 0 0 1 10-10h39l14 14h67a10 10 0 0 1 10 10v60a10 10 0 0 1-10 10H30a10 10 0 0 1-10-10Z" fill="url(#folderBack)" stroke="#c58b26" stroke-width="2.5"/><path d="M13 51a10 10 0 0 1 10-10h134a10 10 0 0 1 10 12l-11 59a10 10 0 0 1-10 8H24a10 10 0 0 1-10-12Z" fill="url(#folderFront)" stroke="#c58b26" stroke-width="2.5"/><path d="M36 66h107" stroke="#fff0c4" stroke-width="3" stroke-linecap="round" opacity=".9"/></svg><h3>Folder selected</h3><p>The previous file preview has been cleared. Select a file inside this folder to preview its contents.</p>';
   }
+  async function selectPassword(item) {
+    closePreviewUrl();
+    state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
+    $('previewTitle').textContent = item.name;
+    $('previewEyebrow').textContent = 'PASSWORD ENTRY';
+    $('previewActions').innerHTML = '';
+    const content = $('previewContent'); content.className = 'preview-content empty-state'; content.replaceChildren();
+    const art = document.createElement('div'); art.className = 'password-entry-art'; art.textContent = '🔑';
+    const heading = document.createElement('h3'); heading.textContent = item.name;
+    const message = document.createElement('p'); message.textContent = 'The password is hidden until you choose Show.';
+    const value = document.createElement('div'); value.className = 'password-value'; value.textContent = '***'; value.setAttribute('aria-label', 'Password hidden');
+    const actions = document.createElement('div'); actions.className = 'password-preview-actions';
+    const show = document.createElement('button'); show.className = 'primary-button'; show.type = 'button'; show.textContent = 'Show';
+    let revealed = false, secret = '';
+    show.addEventListener('click', async () => {
+      if (state.selectedId !== item.id) return;
+      if (revealed) { secret = ''; value.textContent = '***'; value.setAttribute('aria-label', 'Password hidden'); show.textContent = 'Show'; revealed = false; return; }
+      show.disabled = true;
+      try { const result = await api(`/api/passwords/${encodeURIComponent(item.id)}/reveal`); if (state.selectedId !== item.id) return; secret = result.value; value.textContent = secret; value.setAttribute('aria-label', 'Password shown'); show.textContent = 'Hide'; revealed = true; }
+      catch (e) { toast(e.message); }
+      finally { show.disabled = false; }
+    });
+    const copy = document.createElement('button'); copy.className = 'secondary-button'; copy.type = 'button'; copy.textContent = 'Copy';
+    copy.addEventListener('click', async () => { try { const result = await api(`/api/passwords/${encodeURIComponent(item.id)}/reveal`); if (state.selectedId !== item.id) return; await copySecret(result.value); toast('Password copied to clipboard.'); } catch(e) { toast(e.message); } });
+    actions.append(show, copy); content.append(art, heading, message, value, actions);
+  }
+  async function copySecret(value) {
+    if (navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(value); return; } catch {}
+    }
+    const temporary = document.createElement('textarea'); temporary.value = value; temporary.style.position = 'fixed'; temporary.style.opacity = '0'; document.body.append(temporary); temporary.select();
+    const ok = document.execCommand('copy'); temporary.remove(); if (!ok) throw new Error('Clipboard access is unavailable in this browser.');
+  }
+
   async function selectEntry(item) {
     state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
     $('previewTitle').textContent = item.name; $('previewEyebrow').textContent = 'FILE PREVIEW'; $('previewActions').innerHTML = '';
@@ -159,7 +196,11 @@
     $('contextTitle').textContent = item.name;
     const actions = $('contextActions'); actions.innerHTML = '';
     const add = (label, fn, danger = false) => { const button = document.createElement('button'); button.className = `action-item${danger ? ' danger' : ''}`; button.textContent = label; button.onclick = async () => { $('contextDialog').close(); try { await fn(); } catch (e) { toast(e.message); } }; actions.append(button); };
-    if (item.locked) add('Unlock…', () => askUnlock(item));
+    if (item.type === 'password') {
+      add('Update password…', () => openPasswordEditor(item));
+      add('Copy password', async () => { const result = await api(`/api/passwords/${encodeURIComponent(item.id)}/reveal`); await copySecret(result.value); toast('Password copied to clipboard.'); });
+      add('Delete (move to Deleted Items)', async () => { if (confirm(`Move “${item.name}” to Deleted Items?`)) { await api(`/api/entries/${encodeURIComponent(item.id)}`, {method:'DELETE'}); if (state.selectedId === item.id) resetPreview(); await refreshTree(); toast('Moved to Deleted Items.'); } }, true);
+    } else if (item.locked) add('Unlock…', () => askUnlock(item));
     else {
       if (item.type === 'folder') { add('Add files…', () => openImport(item.id, false)); add('Add folder…', () => openImport(item.id, true)); }
       add('Restore copy to computer…', () => openExport(item));
@@ -208,6 +249,34 @@
     try { const result = await api(`/api/entries/${item.id}/unlock`, {method:'POST', body:JSON.stringify({password})}); await refreshTree(); toast('Item unlocked.'); if (item.type === 'file') { const found = findEntry((await api('/api/tree')).items, item.id); if (found) await selectEntry(found); } }
     catch (e) { toast(e.message); }
   }
+  let editingPasswordId = null;
+  function openPasswordEditor(item = null) {
+    editingPasswordId = item?.id || null;
+    $('passwordEntryDialogTitle').textContent = item ? 'Update password' : 'Add password';
+    $('savePasswordEntryButton').textContent = item ? 'Update password' : 'Save password';
+    $('passwordEntryName').value = item?.name || '';
+    $('passwordEntryValue').value = '';
+    $('passwordEntryValue').placeholder = item ? 'Enter the new password value' : 'Enter the password value';
+    showMessage('passwordEntryMessage', item ? 'Enter a new value to replace the existing password.' : '');
+    $('passwordEntryDialog').showModal();
+    $('passwordEntryName').focus();
+  }
+  async function savePasswordEntry() {
+    const name = $('passwordEntryName').value.trim(), value = $('passwordEntryValue').value;
+    if (!name || !value) { showMessage('passwordEntryMessage', 'Name and password value are required.'); return; }
+    const button = $('savePasswordEntryButton'); button.disabled = true;
+    try {
+      const editingId = editingPasswordId;
+      const result = await api(editingId ? `/api/passwords/${encodeURIComponent(editingId)}` : '/api/passwords', {method: editingId ? 'PUT' : 'POST', body: JSON.stringify({name, value})});
+      $('passwordEntryDialog').close(); $('passwordEntryValue').value = '';
+      await refreshTree();
+      const item = findEntry(state.treeItems, result.id || editingId);
+      if (item) await selectPassword(item);
+      toast(editingId ? 'Password updated.' : 'Password added.');
+    } catch (e) { showMessage('passwordEntryMessage', e.message); }
+    finally { button.disabled = false; }
+  }
+
   function selectedImportTarget() {
     if (!state.selectedId) return { id: '', path: 'Root' };
     let match = null;
@@ -231,6 +300,7 @@
     return match || { id: '', path: 'Root' };
   }
   function openImport(parentId = null, folderMode = null) {
+    if (state.vaultType !== 'file') { toast('File and folder imports are only available in file vaults.'); return; }
     const target = parentId === null ? selectedImportTarget() : null;
     state.importParent = parentId === null ? (target.id || '') : parentId;
     let destinationPath = target?.path || 'Root';
@@ -252,24 +322,120 @@
     $('filePicker').classList.toggle('hidden', folderMode === true); $('folderPicker').classList.toggle('hidden', folderMode === false);
     $('importTitle').textContent = folderMode === true ? 'Add a folder' : (folderMode === false ? 'Add files' : 'Add files or folder'); showMessage('importMessage', ''); $('importDialog').showModal();
   }
+  async function collectDroppedFiles(dataTransfer) {
+    const collected = [];
+    const readEntry = (entry, relativePath = '') => new Promise((resolve, reject) => {
+      if (entry.isFile) {
+        entry.file(file => { collected.push({file, path: relativePath ? `${relativePath}/${file.name}` : file.name}); resolve(); }, reject);
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const childPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+        const readBatch = () => reader.readEntries(async entries => {
+          if (!entries.length) { resolve(); return; }
+          try { for (const child of entries) await readEntry(child, childPath); readBatch(); }
+          catch (error) { reject(error); }
+        }, reject);
+        readBatch();
+      } else resolve();
+    });
+    const transferItems = Array.from(dataTransfer?.items || []).filter(item => item.kind === 'file');
+    let usedEntries = false;
+    for (const item of transferItems) {
+      const entry = item.webkitGetAsEntry?.() || item.getAsEntry?.();
+      if (entry) { usedEntries = true; await readEntry(entry); }
+    }
+    if (!usedEntries) {
+      for (const file of Array.from(dataTransfer?.files || [])) collected.push({file, path: file.webkitRelativePath || file.name});
+    }
+    return collected;
+  }
+  function itemPathAndParent(targetId) {
+    let result = null;
+    function walk(items, ancestors) {
+      for (const item of items || []) {
+        const path = [...ancestors, item];
+        if (item.id === targetId) {
+          if (item.type === 'folder') result = {id: item.id, path: path.map(x => x.name).join(' / '), item};
+          else result = {id: ancestors.length ? ancestors[ancestors.length - 1].id : '', path: ancestors.length ? ancestors.map(x => x.name).join(' / ') : 'Root', item};
+          return true;
+        }
+        if (walk(item.children || [], path)) return true;
+      }
+      return false;
+    }
+    walk(state.treeItems, []);
+    return result || {id: '', path: 'Root', item: null};
+  }
+  function dropTargetForEvent(event) {
+    const row = event.target.closest?.('.tree-row');
+    if (row) return itemPathAndParent(row.dataset.id);
+    return selectedImportTarget();
+  }
+  async function performImport(items, parentId, destinationPath) {
+    if (state.vaultType !== 'file') { toast('Drag-and-drop imports are available only in file vaults.'); return; }
+    if (!items.length) { toast('No files or folders were found in that drop.'); return; }
+    const data = new FormData(); data.append('parent_id', parentId || '');
+    data.append('relative_paths', JSON.stringify(items.map(item => item.path || item.file.webkitRelativePath || item.file.name)));
+    items.forEach(item => data.append('files', item.file, item.file.name));
+    showMessage('importMessage', `Importing ${items.length} file(s) to ${destinationPath || 'Root'}…`);
+    const button = $('startImportButton'); button.disabled = true;
+    try {
+      const result = await api('/api/import/files', {method:'POST', body:data});
+      if ($('importDialog').open) $('importDialog').close();
+      await refreshTree();
+      toast(`Imported ${result.imported} file(s) to ${destinationPath || 'Root'}.`);
+    } catch (e) {
+      if ($('importDialog').open) showMessage('importMessage', e.message); else toast(e.message);
+    } finally { button.disabled = false; }
+  }
   async function runImport() {
     const selected = [...(!$('filePicker').classList.contains('hidden') ? Array.from($('filePicker').files) : []), ...(!$('folderPicker').classList.contains('hidden') ? Array.from($('folderPicker').files) : [])];
-    if (!selected.length) { showMessage('importMessage', 'Choose at least one file or folder.'); return; }
-    const data = new FormData(); data.append('parent_id', state.importParent || '');
-    const paths = selected.map(file => file.webkitRelativePath || file.name); data.append('relative_paths', JSON.stringify(paths));
-    selected.forEach(file => data.append('files', file, file.name));
-    $('startImportButton').disabled = true; showMessage('importMessage', `Importing ${selected.length} file(s)…`);
-    try { const result = await api('/api/import/files', {method:'POST', body:data}); $('importDialog').close(); await refreshTree(); toast(`Imported ${result.imported} file(s).`); }
-    catch (e) { showMessage('importMessage', e.message); }
-    finally { $('startImportButton').disabled = false; }
+    if (!selected.length) { showMessage('importMessage', 'Choose files or a folder, or drop them into the area above.'); return; }
+    const target = {id: state.importParent || '', path: $('importTargetLocation').textContent || 'Root'};
+    await performImport(selected.map(file => ({file, path: file.webkitRelativePath || file.name})), target.id, target.path);
   }
+  const importDropZone = $('importDropZone');
+  importDropZone.addEventListener('dragover', event => { event.preventDefault(); importDropZone.classList.add('drag-active'); });
+  importDropZone.addEventListener('dragleave', event => { if (!importDropZone.contains(event.relatedTarget)) importDropZone.classList.remove('drag-active'); });
+  importDropZone.addEventListener('drop', async event => {
+    event.preventDefault(); event.stopPropagation(); importDropZone.classList.remove('drag-active');
+    try { const items = await collectDroppedFiles(event.dataTransfer); await performImport(items, state.importParent || '', $('importTargetLocation').textContent || 'Root'); }
+    catch (error) { showMessage('importMessage', `Could not read the dropped files or folders: ${error.message}`); }
+  });
+  const sidebarDropSurface = $('tree').parentElement;
+  sidebarDropSurface.addEventListener('dragover', event => {
+    if (state.vaultType !== 'file' || !(Array.from(event.dataTransfer?.types || []).includes('Files'))) return;
+    event.preventDefault();
+    sidebarDropSurface.classList.add('drag-active');
+    $('tree').querySelectorAll('.tree-row.drop-target').forEach(row => row.classList.remove('drop-target'));
+    const row = event.target.closest?.('.tree-row'); if (row) row.classList.add('drop-target');
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  });
+  sidebarDropSurface.addEventListener('dragleave', event => {
+    if (!sidebarDropSurface.contains(event.relatedTarget)) {
+      sidebarDropSurface.classList.remove('drag-active');
+      $('tree').querySelectorAll('.tree-row.drop-target').forEach(row => row.classList.remove('drop-target'));
+    }
+  });
+  sidebarDropSurface.addEventListener('drop', async event => {
+    if (event.target.closest?.('#importDropZone')) return;
+    if (!(Array.from(event.dataTransfer?.types || []).includes('Files'))) return;
+    event.preventDefault();
+    sidebarDropSurface.classList.remove('drag-active');
+    $('tree').querySelectorAll('.tree-row.drop-target').forEach(row => row.classList.remove('drop-target'));
+    if (state.vaultType !== 'file') { toast('Drag-and-drop files and folders are available only in file vaults.'); return; }
+    const target = dropTargetForEvent(event);
+    if (target.item?.locked) { toast('Unlock this folder before importing into it.'); return; }
+    try { const items = await collectDroppedFiles(event.dataTransfer); await performImport(items, target.id || '', target.path || 'Root'); }
+    catch (error) { toast(`Could not read the dropped files or folders: ${error.message}`); }
+  });
   async function showTrash() {
     const data = await api('/api/trash'); const list = $('trashList'); list.innerHTML = '';
     if (!data.items.length) { list.innerHTML = '<div class="empty-state"><div class="empty-icon">▤</div><h3>Nothing deleted</h3><p>Items you delete will appear here.</p></div>'; }
     for (const item of data.items) {
       const row = document.createElement('div'); row.className = 'trash-row';
       const meta = document.createElement('div'); meta.className = 'trash-meta';
-      const name = document.createElement('div'); name.className = 'trash-name'; name.textContent = `${item.type === 'folder' ? '▰' : '▤'} ${item.name}`;
+      const name = document.createElement('div'); name.className = 'trash-name'; name.textContent = `${item.type === 'folder' ? '▰' : (item.type === 'password' ? '🔑' : '▤')} ${item.name}`;
       const date = document.createElement('div'); date.className = 'trash-date'; date.textContent = item.deleted_at ? new Date(item.deleted_at).toLocaleString() : 'Deleted'; meta.append(name, date);
       const buttons = document.createElement('div'); buttons.className = 'trash-buttons';
       const restore = document.createElement('button'); restore.className = 'secondary-button'; restore.textContent = 'Restore'; restore.onclick = async () => { try { await api(`/api/entries/${item.id}/restore`, {method:'POST',body:JSON.stringify({})}); await showTrash(); await refreshTree(); toast('Item restored.'); } catch(e) { toast(e.message); } };
@@ -302,7 +468,14 @@
   });
 
   function setVaultLabel(label) { $('sidebarVaultLabel').textContent = label || 'Vault locked'; }
-  function populateVaultPicker(vaults, selectId = 'vaultSelect') { const select = $(selectId); select.innerHTML = ''; for (const vault of vaults) { const option = document.createElement('option'); option.value = vault.id; option.textContent = vault.label; select.append(option); } }
+  function setVaultType(type) {
+    state.vaultType = type === 'password' ? 'password' : 'file';
+    $('importRootButton').classList.toggle('hidden', state.vaultType !== 'file');
+    $('addPasswordButton').classList.toggle('hidden', state.vaultType !== 'password');
+    $('tree').setAttribute('aria-label', state.vaultType === 'password' ? 'Saved passwords' : 'Vault files and folders');
+    $('previewTitle').dataset.vaultType = state.vaultType;
+  }
+  function populateVaultPicker(vaults, selectId = 'vaultSelect') { const select = $(selectId); select.innerHTML = ''; for (const vault of vaults) { const option = document.createElement('option'); option.value = vault.id; option.textContent = `${vault.label} · ${vault.type === 'password' ? 'Password vault' : 'File vault'}`; select.append(option); } }
   async function openSelectedVault() { try { const result = await api('/api/vaults/select', {method:'POST', body:JSON.stringify({vault_id:$('vaultSelect').value})}); state.unlocked = true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Opened ${result.vault_label}.`); } catch(e) { showMessage('unlockMessage', e.message); } }
   function updateVaultManagementButtons(settings) {
     const vaults = Array.isArray(settings?.vaults) ? settings.vaults : [];
@@ -365,8 +538,9 @@
       toast(`Removed ${result.removed_label} from the list.`);
     } catch (e) { showMessage('vaultManagementMessage', e.message); }
   }
-  function openCreateVault() { $('createVaultLabel').value=''; $('createVaultDirectory').value=''; $('createVaultPrefix').value=''; $('convertExistingFolder').checked=false; $('createManageVisibility').checked=false; showMessage('createVaultMessage',''); $('createVaultDialog').showModal(); }
-  async function createVault() { const label=$('createVaultLabel').value.trim(), target_directory=$('createVaultDirectory').value.trim(), prefix=$('createVaultPrefix').value.trim(), convert_existing=$('convertExistingFolder').checked, manage_visibility=$('createManageVisibility').checked; if (!label || !target_directory || !prefix) { showMessage('createVaultMessage','Vault label, destination folder, and storage prefix are required.'); return; } if (convert_existing && !confirm('Convert this ordinary non-empty folder into encrypted vault storage? Files will be encrypted and the originals retained until staging and verification succeed. Continue?')) return; const button=$('confirmCreateVaultButton'); button.disabled=true; try { const result=await api('/api/vaults/create',{method:'POST',body:JSON.stringify({label,target_directory,prefix,convert_existing,manage_visibility})}); $('createVaultDialog').close(); localStorage.removeItem('mps-session-locked'); state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Created and opened ${result.vault_label}.`); } catch(e) { showMessage('createVaultMessage',e.message); } finally { button.disabled=false; } }
+  function syncCreateVaultTypeOptions() { const isPassword = $('createVaultType').value === 'password'; const conversionLabel = $('convertExistingFolder').closest('label'); conversionLabel.classList.toggle('hidden', isPassword); if (isPassword) $('convertExistingFolder').checked = false; }
+  function openCreateVault() { $('createVaultType').value='file'; $('createVaultLabel').value=''; $('createVaultDirectory').value=''; $('createVaultPrefix').value=''; $('convertExistingFolder').checked=false; $('createManageVisibility').checked=false; syncCreateVaultTypeOptions(); showMessage('createVaultMessage',''); $('createVaultDialog').showModal(); }
+  async function createVault() { const label=$('createVaultLabel').value.trim(), target_directory=$('createVaultDirectory').value.trim(), prefix=$('createVaultPrefix').value.trim(), convert_existing=$('convertExistingFolder').checked, manage_visibility=$('createManageVisibility').checked, vault_type=$('createVaultType').value; if (!label || !target_directory || !prefix) { showMessage('createVaultMessage','Vault label, destination folder, and storage prefix are required.'); return; } if (convert_existing && !confirm('Convert this ordinary non-empty folder into encrypted vault storage? Files will be encrypted and the originals retained until staging and verification succeed. Continue?')) return; const button=$('confirmCreateVaultButton'); button.disabled=true; try { const result=await api('/api/vaults/create',{method:'POST',body:JSON.stringify({label,target_directory,prefix,convert_existing,manage_visibility,vault_type})}); $('createVaultDialog').close(); localStorage.removeItem('mps-session-locked'); state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Created and opened ${result.vault_label}.`); } catch(e) { showMessage('createVaultMessage',e.message); } finally { button.disabled=false; } }
   async function boot() {
     applyTheme(state.theme);
     try {
@@ -379,7 +553,7 @@
   }
   $('setupForm').addEventListener('submit', async e => {
     e.preventDefault(); showMessage('setupMessage','Creating encrypted vault…');
-    try { const result = await api('/api/setup',{method:'POST',body:JSON.stringify({label:$('setupVaultLabel').value.trim(),prefix:$('setupPrefix').value.trim(),target_directory:$('targetDirectory').value.trim(),manage_visibility:$('setupManageVisibility').checked,password:$('setupPassword').value,confirm_password:$('setupConfirm').value})}); $('setupPassword').value=''; $('setupConfirm').value=''; state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); showScreen('workspace'); await refreshTree(); toast('Vault created.'); }
+    try { const result = await api('/api/setup',{method:'POST',body:JSON.stringify({label:$('setupVaultLabel').value.trim(),prefix:$('setupPrefix').value.trim(),target_directory:$('targetDirectory').value.trim(),manage_visibility:$('setupManageVisibility').checked,vault_type:$('setupVaultType').value,password:$('setupPassword').value,confirm_password:$('setupConfirm').value})}); $('setupPassword').value=''; $('setupConfirm').value=''; state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); setVaultType(result.vault_type || $('setupVaultType').value); showScreen('workspace'); await refreshTree(); toast('Vault created.'); }
     catch(error) { showMessage('setupMessage',error.message); }
   });
   $('unlockForm').addEventListener('submit', async e => {
@@ -403,6 +577,9 @@
   $('refreshButton').addEventListener('click', () => refreshTree().catch(e => toast(e.message)));
   $('trashButton').addEventListener('click', () => showTrash().catch(e => toast(e.message)));
   $('importRootButton').addEventListener('click', () => openImport(null, null));
+  $('addPasswordButton').addEventListener('click', () => openPasswordEditor());
+  $('savePasswordEntryButton').addEventListener('click', savePasswordEntry);
+  $('createVaultType').addEventListener('change', syncCreateVaultTypeOptions);
   $('startImportButton').addEventListener('click', runImport);
   $('themeSelect').addEventListener('change', async () => { applyTheme($('themeSelect').value); try { await api('/api/settings',{method:'PUT',body:JSON.stringify({theme:state.theme})}); } catch(e) { toast(e.message); } });
   $('moveVaultButton').addEventListener('click', moveVault);

@@ -518,3 +518,81 @@ def test_visibility_flag_normalization_and_validation(tmp_path):
         assert False, "non-boolean visibility flag should be rejected"
     except ValueError as exc:
         assert "visibility" in str(exc).lower()
+
+
+def test_password_vault_entry_lifecycle_and_file_import_rejection(monkeypatch, tmp_path):
+    home = tmp_path / "app-home"
+    home.mkdir()
+    vault = tmp_path / "password-vault"
+    vault.mkdir()
+    monkeypatch.setattr(main_module, "APP_HOME", home)
+    monkeypatch.setattr(main_module, "CONFIG_PATH", home / "config.me")
+    monkeypatch.setattr(main_module, "STATE_PATH", home / "state.me")
+    monkeypatch.setattr(main_module, "PASSWORD_CHANGE_JOURNAL", home / "password-change-journal.json")
+    main_module.LOGIN_STATE.update(failed_attempts=0, locked_until=0)
+    main_module._write_login_state(main_module.LOGIN_STATE)
+    main_module.expire_session()
+
+    setup_response = client.post("/api/setup", headers=H, json={
+        "label": "Secrets", "prefix": "secrets-", "target_directory": str(vault),
+        "vault_type": "password", "password": "Abc@1234", "confirm_password": "Abc@1234"
+    })
+    assert setup_response.status_code == 200, setup_response.text
+    assert setup_response.json()["vault_type"] == "password"
+    settings_response = client.get("/api/settings", headers=H)
+    assert settings_response.status_code == 200 and settings_response.json()["vault_type"] == "password"
+    password_vault_id = setup_response.json()["vaults"][0]["id"]
+
+    created = client.post("/api/passwords", headers=H, json={"name": "Mail", "value": "initial-secret"})
+    assert created.status_code == 200, created.text
+    entry_id = created.json()["id"]
+    tree = client.get("/api/tree", headers=H).json()
+    assert tree["vault_type"] == "password"
+    assert tree["items"][0]["type"] == "password"
+    assert tree["items"][0]["name"] == "Mail"
+
+    physical = vault / entry_id
+    assert b"initial-secret" not in physical.read_bytes()
+    manifest = main_module.decrypt_json(main_module.password_key("Abc@1234"), (vault / "manifest.enc").read_bytes(), b"mps:manifest:v1")
+    assert "initial-secret" not in json.dumps(manifest)
+
+    revealed = client.get(f"/api/passwords/{entry_id}/reveal", headers=H)
+    assert revealed.status_code == 200 and revealed.json()["value"] == "initial-secret"
+    updated = client.put(f"/api/passwords/{entry_id}", headers=H, json={"name": "Updated Mail", "value": "new-secret"})
+    assert updated.status_code == 200, updated.text
+    assert client.get(f"/api/passwords/{entry_id}/reveal", headers=H).json()["value"] == "new-secret"
+    assert client.post("/api/import/files", headers=H, data={"parent_id": ""}, files=[("files", ("x.txt", b"not allowed", "text/plain"))]).status_code == 400
+
+    # Create a second, different vault type to verify the main-password transaction
+    # re-encrypts password entries in inactive password vaults as well.
+    file_vault = tmp_path / "file-vault"
+    file_vault.mkdir()
+    file_vault_result = client.post("/api/vaults/create", headers=H, json={
+        "label": "Documents", "prefix": "docs-", "target_directory": str(file_vault), "vault_type": "file"
+    })
+    assert file_vault_result.status_code == 200, file_vault_result.text
+    assert file_vault_result.json()["vault_type"] == "file"
+
+    # The password remains usable after changing the main vault password.
+    changed = client.post("/api/settings/password", headers=H, json={
+        "current_password": "Abc@1234", "new_password": "Xyz@5678", "confirm_password": "Xyz@5678"
+    })
+    assert changed.status_code == 200, changed.text
+    selected_password_vault = client.post("/api/vaults/select", headers=H, json={"vault_id": password_vault_id})
+    assert selected_password_vault.status_code == 200, selected_password_vault.text
+    assert selected_password_vault.json()["vault_type"] == "password"
+    assert client.get(f"/api/passwords/{entry_id}/reveal", headers=H).json()["value"] == "new-secret"
+
+    deleted = client.delete(f"/api/entries/{entry_id}", headers=H)
+    assert deleted.status_code == 200
+    assert client.get(f"/api/passwords/{entry_id}/reveal", headers=H).status_code == 404
+
+    additional_password_vault = tmp_path / "additional-password-vault"
+    additional_password_vault.mkdir()
+    created_password_vault = client.post("/api/vaults/create", headers=H, json={
+        "label": "More Secrets", "prefix": "more-", "target_directory": str(additional_password_vault), "vault_type": "password"
+    })
+    assert created_password_vault.status_code == 200, created_password_vault.text
+    assert created_password_vault.json()["vault_type"] == "password"
+    assert main_module.STATE["manifest"].get("vault_type") == "password"
+    main_module.expire_session()
