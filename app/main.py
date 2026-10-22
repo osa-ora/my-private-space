@@ -5,6 +5,7 @@ import io
 import json
 import mimetypes
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -399,6 +400,9 @@ def public_tree(manifest: dict[str, Any]) -> dict[str, Any]:
             item = {"id": eid, "name": entry["name"], "type": entry["type"],
                     "locked": bool(entry.get("locked")), "mime": entry.get("mime", "application/octet-stream"),
                     "size": entry.get("size", 0), "children": []}
+            if entry["type"] == "password":
+                item["created_at"] = entry["created_at"]
+                item["updated_at"] = entry["updated_at"]
             if entry["type"] == "folder" and not entry.get("locked"):
                 item["children"] = build(eid)
             result.append(item)
@@ -1028,7 +1032,8 @@ def create_password_entry(payload: PasswordEntryRequest):
             raise HTTPException(400, "A name and password value are required.")
         old_manifest = json.loads(json.dumps(manifest))
         entry_id = allocate_id(manifest)
-        entry = {"name": name, "type": "password", "parent_id": None, "mime": "application/x-mps-password", "size": len(payload.value.encode("utf-8")), "created_at": now_iso(), "deleted": False, "locked": False}
+        created_at = now_iso()
+        entry = {"name": name, "type": "password", "parent_id": None, "mime": "application/x-mps-password", "size": len(payload.value.encode("utf-8")), "created_at": created_at, "updated_at": created_at, "deleted": False, "locked": False}
         manifest["entries"][entry_id] = entry
         path = entry_path(entry_id, manifest, root)
         try:
@@ -1053,6 +1058,51 @@ def reveal_password_entry(entry_id: str):
     return JSONResponse({"id": entry_id, "name": entry["name"], "value": value}, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
 
 
+def assess_password_strength(value: str) -> dict[str, Any]:
+    """Return a local heuristic assessment; never persist or return the password itself."""
+    lowered = value.casefold()
+    common = {"password", "password1", "123456", "12345678", "qwerty", "qwerty123", "letmein", "admin", "welcome", "iloveyou", "abc123", "changeme"}
+    score = 0
+    feedback: list[str] = []
+    length = len(value)
+    if length >= 20: score += 3
+    elif length >= 16: score += 2
+    elif length >= 12: score += 1
+    else: feedback.append("Use at least 12 characters; 16 or more is better.")
+    classes = sum((any(c.islower() for c in value), any(c.isupper() for c in value), any(c.isdigit() for c in value), any(not c.isalnum() for c in value)))
+    if classes >= 3: score += 1
+    elif classes == 2: score += 0.5
+    else: feedback.append("Mix different character types or use a longer passphrase.")
+    if lowered in common or re.fullmatch(r"(?:1234567890|0987654321|qwertyuiop|asdfghjkl|zxcvbnm)+", lowered):
+        score = 0
+        feedback = ["This is a common or predictable password. Choose a unique one."]
+    if re.search(r"(.)\1{3,}", value) or any(seq in lowered for seq in ("1234", "abcd", "qwer", "asdf")):
+        score = max(0, score - 1)
+        if "Avoid repeated characters and predictable sequences." not in feedback:
+            feedback.append("Avoid repeated characters and predictable sequences.")
+    if length < 8:
+        score = min(score, 1)
+        if not feedback: feedback.append("This password is very short.")
+    score = max(0, min(4, int(score + 0.5)))
+    labels = ["Weak", "Fair", "Good", "Strong", "Very Strong"]
+    if score >= 3 and not feedback:
+        feedback.append("Good length and variety. Make sure this password is unique to this account.")
+    elif not feedback:
+        feedback.append("Consider a longer, unique password or passphrase.")
+    return {"score": score, "label": labels[score], "feedback": feedback[:2]}
+
+
+@app.get("/api/passwords/{entry_id}/strength")
+def password_entry_strength(entry_id: str):
+    root, key, manifest = require_password_vault()
+    entry = require_password_entry(entry_id, manifest)
+    try:
+        value = decrypt_bytes(key, entry_path(entry_id, manifest, root).read_bytes(), f"mps:password:{entry_id}:v1".encode()).decode("utf-8")
+    except Exception:
+        raise HTTPException(500, "This password entry could not be assessed; the vault may be damaged.")
+    return JSONResponse(assess_password_strength(value), headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+
+
 @app.put("/api/passwords/{entry_id}")
 def update_password_entry(entry_id: str, payload: PasswordEntryRequest):
     with MUTATION_LOCK:
@@ -1063,15 +1113,16 @@ def update_password_entry(entry_id: str, payload: PasswordEntryRequest):
             raise HTTPException(400, "A name and password value are required.")
         path = entry_path(entry_id, manifest, root)
         old_blob = path.read_bytes()
-        old_name, old_size = entry["name"], entry.get("size", 0)
+        old_name, old_size, old_updated = entry["name"], entry.get("size", 0), entry["updated_at"]
         try:
             atomic_write(path, encrypt_bytes(key, payload.value.encode("utf-8"), f"mps:password:{entry_id}:v1".encode()))
             entry["name"] = name
             entry["size"] = len(payload.value.encode("utf-8"))
+            entry["updated_at"] = now_iso()
             save_manifest()
         except Exception as exc:
             atomic_write(path, old_blob)
-            entry["name"], entry["size"] = old_name, old_size
+            entry["name"], entry["size"], entry["updated_at"] = old_name, old_size, old_updated
             if isinstance(exc, HTTPException): raise
             raise HTTPException(500, f"Could not update password entry: {exc}")
         return {"ok": True, "id": entry_id, "name": name}

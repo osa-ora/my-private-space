@@ -134,6 +134,25 @@
     const heading = document.createElement('h3'); heading.textContent = item.name;
     const message = document.createElement('p'); message.textContent = 'The password is hidden until you choose Show.';
     const value = document.createElement('div'); value.className = 'password-value'; value.textContent = '***'; value.setAttribute('aria-label', 'Password hidden');
+    const metadata = document.createElement('div'); metadata.className = 'password-meta-grid';
+    const created = document.createElement('div'); created.className = 'password-meta-card';
+    const createdLabel = document.createElement('span'); createdLabel.textContent = 'Created';
+    const createdValue = document.createElement('strong'); createdValue.textContent = formatEntryTimestamp(item.created_at);
+    created.append(createdLabel, createdValue);
+    const updated = document.createElement('div'); updated.className = 'password-meta-card';
+    const updatedLabel = document.createElement('span'); updatedLabel.textContent = 'Last Updated';
+    const updatedValue = document.createElement('strong'); updatedValue.textContent = formatEntryTimestamp(item.updated_at);
+    updated.append(updatedLabel, updatedValue);
+    metadata.append(created, updated);
+    const strength = document.createElement('section'); strength.className = 'password-strength';
+    const strengthHeader = document.createElement('div'); strengthHeader.className = 'password-strength-header';
+    const strengthLabel = document.createElement('strong'); strengthLabel.textContent = 'Password Strength';
+    const strengthValue = document.createElement('span'); strengthValue.textContent = 'Assessing…';
+    strengthHeader.append(strengthLabel, strengthValue);
+    const strengthTrack = document.createElement('div'); strengthTrack.className = 'password-strength-track'; strengthTrack.setAttribute('role', 'meter'); strengthTrack.setAttribute('aria-label', 'Password strength'); strengthTrack.setAttribute('aria-valuemin', '0'); strengthTrack.setAttribute('aria-valuemax', '4'); strengthTrack.setAttribute('aria-valuenow', '0');
+    const strengthFill = document.createElement('div'); strengthFill.className = 'password-strength-fill'; strengthTrack.append(strengthFill);
+    const strengthFeedback = document.createElement('p'); strengthFeedback.className = 'password-strength-feedback'; strengthFeedback.textContent = 'Checking locally on this device…';
+    strength.append(strengthHeader, strengthTrack, strengthFeedback);
     const actions = document.createElement('div'); actions.className = 'password-preview-actions';
     const show = document.createElement('button'); show.className = 'primary-button'; show.type = 'button'; show.textContent = 'Show';
     let revealed = false, secret = '';
@@ -147,7 +166,25 @@
     });
     const copy = document.createElement('button'); copy.className = 'secondary-button'; copy.type = 'button'; copy.textContent = 'Copy';
     copy.addEventListener('click', async () => { try { const result = await api(`/api/passwords/${encodeURIComponent(item.id)}/reveal`); if (state.selectedId !== item.id) return; await copySecret(result.value); toast('Password copied to clipboard.'); } catch(e) { toast(e.message); } });
-    actions.append(show, copy); content.append(art, heading, message, value, actions);
+    actions.append(show, copy); content.append(art, heading, message, value, metadata, strength, actions);
+    api(`/api/passwords/${encodeURIComponent(item.id)}/strength`).then(result => {
+      if (state.selectedId !== item.id) return;
+      strengthValue.textContent = result.label;
+      strengthTrack.setAttribute('aria-valuenow', String(result.score));
+      strengthFill.style.width = `${(result.score / 4) * 100}%`;
+      strengthFill.dataset.score = String(result.score);
+      strengthFeedback.textContent = (result.feedback || []).join(' ');
+    }).catch(() => {
+      if (state.selectedId !== item.id) return;
+      strengthValue.textContent = 'Unavailable';
+      strengthFeedback.textContent = 'Strength could not be assessed.';
+    });
+  }
+  function formatEntryTimestamp(value) {
+    if (!value) return 'Not available';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Not available';
+    return new Intl.DateTimeFormat(undefined, {year:'numeric', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}).format(date);
   }
   async function copySecret(value) {
     if (navigator.clipboard?.writeText) {

@@ -550,6 +550,12 @@ def test_password_vault_entry_lifecycle_and_file_import_rejection(monkeypatch, t
     assert tree["vault_type"] == "password"
     assert tree["items"][0]["type"] == "password"
     assert tree["items"][0]["name"] == "Mail"
+    created_at = tree["items"][0]["created_at"]
+    assert created_at and tree["items"][0]["updated_at"] == created_at
+    strength = client.get(f"/api/passwords/{entry_id}/strength", headers=H)
+    assert strength.status_code == 200, strength.text
+    assert strength.json()["label"] in {"Weak", "Fair", "Good", "Strong", "Very Strong"}
+    assert "value" not in strength.json() and "initial-secret" not in strength.text
 
     physical = vault / entry_id
     assert b"initial-secret" not in physical.read_bytes()
@@ -560,6 +566,9 @@ def test_password_vault_entry_lifecycle_and_file_import_rejection(monkeypatch, t
     assert revealed.status_code == 200 and revealed.json()["value"] == "initial-secret"
     updated = client.put(f"/api/passwords/{entry_id}", headers=H, json={"name": "Updated Mail", "value": "new-secret"})
     assert updated.status_code == 200, updated.text
+    updated_tree = client.get("/api/tree", headers=H).json()["items"][0]
+    assert updated_tree["created_at"] == created_at
+    assert updated_tree["updated_at"] != created_at
     assert client.get(f"/api/passwords/{entry_id}/reveal", headers=H).json()["value"] == "new-secret"
     assert client.post("/api/import/files", headers=H, data={"parent_id": ""}, files=[("files", ("x.txt", b"not allowed", "text/plain"))]).status_code == 400
 
@@ -596,3 +605,11 @@ def test_password_vault_entry_lifecycle_and_file_import_rejection(monkeypatch, t
     assert created_password_vault.json()["vault_type"] == "password"
     assert main_module.STATE["manifest"].get("vault_type") == "password"
     main_module.expire_session()
+
+
+def test_password_strength_assessment_is_local_heuristic():
+    weak = main_module.assess_password_strength("password123")
+    strong = main_module.assess_password_strength("Violet!River7-Cloud#Maple")
+    assert weak["label"] in {"Weak", "Fair"}
+    assert strong["label"] in {"Strong", "Very Strong"}
+    assert "value" not in strong and "Violet!River7-Cloud#Maple" not in json.dumps(strong)
