@@ -613,3 +613,15 @@ def test_password_strength_assessment_is_local_heuristic():
     assert weak["label"] in {"Weak", "Fair"}
     assert strong["label"] in {"Strong", "Very Strong"}
     assert "value" not in strong and "Violet!River7-Cloud#Maple" not in json.dumps(strong)
+
+
+def test_file_vault_root_drop_target_and_header_create_vault_action():
+    template = (Path(__file__).resolve().parents[1] / "app" / "templates" / "index.html").read_text()
+    script = (Path(__file__).resolve().parents[1] / "app" / "static" / "js" / "app.js").read_text()
+    assert 'id="switchVaultButton"' in template
+    assert 'id="createVaultButton"' in template
+    top_actions = template.split('<div class="top-actions">', 1)[1].split('</div>', 1)[0]
+    assert top_actions.index('id="switchVaultButton"') < top_actions.index('id="createVaultButton"')
+    assert 'function renderRootDropTarget(container)' in script
+    assert "classList.contains('tree-root-drop')" in script
+    assert "return {id: '', path: 'Root', item: null}" in script

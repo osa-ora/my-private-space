@@ -25,7 +25,7 @@
     clearTimeout(toastTimer);
   }
   function toast(message) { const el = $('toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600); }
-  function showScreen(id) { clearAllMessages(); screens.forEach(s => $(s).classList.toggle('hidden', s !== id)); $('lockVaultButton').classList.toggle('hidden', id !== 'workspace'); $('switchVaultButton').classList.toggle('hidden', id !== 'workspace'); }
+  function showScreen(id) { clearAllMessages(); screens.forEach(s => $(s).classList.toggle('hidden', s !== id)); $('lockVaultButton').classList.toggle('hidden', id !== 'workspace'); $('switchVaultButton').classList.toggle('hidden', id !== 'workspace'); $('createVaultButton').classList.toggle('hidden', id !== 'workspace'); }
   function applyTheme(theme) { state.theme = theme; document.body.dataset.theme = theme; localStorage.setItem('mps-theme', theme); if ($('themeSelect')) $('themeSelect').value = theme; }
   function closePreviewUrl() { if (state.previewUrl) URL.revokeObjectURL(state.previewUrl); state.previewUrl = null; }
   function escapeHtml(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -35,6 +35,7 @@
     state.treeItems = data.items || [];
     setVaultType(data.vault_type || 'file');
     $('tree').innerHTML = '';
+    if (state.vaultType === 'file') renderRootDropTarget($('tree'));
     renderTreeItems(state.treeItems, $('tree'), 0);
     if (state.selectedId) {
       const found = findEntry(data.items, state.selectedId);
@@ -43,6 +44,23 @@
     }
   }
   function findEntry(items, id) { for (const item of items) { if (item.id === id) return item; const found = findEntry(item.children || [], id); if (found) return found; } return null; }
+  function renderRootDropTarget(container) {
+    const row = document.createElement('div');
+    row.className = 'tree-row tree-root-drop';
+    row.dataset.id = '';
+    row.tabIndex = 0;
+    row.setAttribute('role', 'treeitem');
+    row.setAttribute('aria-label', 'Vault root, drop files or folders here');
+    row.setAttribute('aria-selected', 'false');
+    const chevron = document.createElement('span'); chevron.className = 'tree-chevron'; chevron.textContent = '⌂';
+    const icon = document.createElement('span'); icon.className = 'tree-icon folder-tree-icon';
+    icon.innerHTML = '<svg viewBox="0 0 32 26" aria-hidden="true"><path d="M2.5 5.5A3 3 0 0 1 5.5 2.5h7l3 3h11A3 3 0 0 1 29.5 8.5v12a3 3 0 0 1-3 3h-21a3 3 0 0 1-3-3Z" fill="#e6b957" stroke="#b98527" stroke-width="1.5"/><path d="M2.5 10h27l-2.2 10.5a3 3 0 0 1-2.9 2.3H5.5a3 3 0 0 1-3-3Z" fill="#ffd978" stroke="#b98527" stroke-width="1.2"/></svg>';
+    const label = document.createElement('span'); label.className = 'tree-name'; label.textContent = 'Vault root';
+    const hint = document.createElement('span'); hint.className = 'tree-root-hint'; hint.textContent = 'Drop here';
+    row.append(chevron, icon, label, hint);
+    row.addEventListener('click', () => { state.selectedId = null; state.selectedEntry = null; updateTreeSelection(); resetPreview(); });
+    container.append(row);
+  }
   function renderTreeItems(items, container, depth) {
     items.forEach(item => {
       const wrapper = document.createElement('div');
@@ -405,8 +423,9 @@
   }
   function dropTargetForEvent(event) {
     const row = event.target.closest?.('.tree-row');
+    if (row?.classList.contains('tree-root-drop')) return {id: '', path: 'Root', item: null};
     if (row) return itemPathAndParent(row.dataset.id);
-    return selectedImportTarget();
+    return {id: '', path: 'Root', item: null};
   }
   async function performImport(items, parentId, destinationPath) {
     if (state.vaultType !== 'file') { toast('Drag-and-drop imports are available only in file vaults.'); return; }
@@ -445,7 +464,7 @@
     event.preventDefault();
     sidebarDropSurface.classList.add('drag-active');
     $('tree').querySelectorAll('.tree-row.drop-target').forEach(row => row.classList.remove('drop-target'));
-    const row = event.target.closest?.('.tree-row'); if (row) row.classList.add('drop-target');
+    const row = event.target.closest?.('.tree-row'); if (row) row.classList.add('drop-target'); else $('tree').querySelector('.tree-root-drop')?.classList.add('drop-target');
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
   });
   sidebarDropSurface.addEventListener('dragleave', event => {

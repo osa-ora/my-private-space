@@ -7,7 +7,7 @@
   <meta name="color-scheme" content="light dark">
   <title>{{ app_name }}</title>
   <link rel="stylesheet" href="/static/css/app.css">
-  <script defer src="/static/js/app.js?v=14"></script>
+  <script defer src="/static/js/app.js?v=15"></script>
 </head>
 <body data-theme="light-navy">
   <header class="topbar">
@@ -15,7 +15,8 @@
     <div class="top-actions">
       <button class="icon-button" id="helpButton" title="Help" aria-label="Help">?</button>
       <button class="icon-button" id="aboutButton" title="About My Private Space" aria-label="About My Private Space">ⓘ</button>
-      <button class="icon-button hidden" id="switchVaultButton" title="Switch vault" aria-label="Switch vault"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4m14 4H3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="icon-button hidden" id="switchVaultButton" title="Switch or remove vault" aria-label="Switch or remove vault"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4m14 4H3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="icon-button hidden" id="createVaultButton" title="Create new vault" aria-label="Create new vault"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       <button class="icon-button hidden" id="lockVaultButton" title="Lock vault" aria-label="Lock vault"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10" width="15" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
       <button class="icon-button" id="settingsButton" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l1.45-1.13-1.6-2.77-1.75.7a7.4 7.4 0 0 0-2.6-1.5L14.65 4h-3.3l-.25 1.8a7.4 7.4 0 0 0-2.6 1.5l-1.75-.7-1.6 2.77L6.6 10.5a7.8 7.8 0 0 0 0 3l-1.45 1.13 1.6 2.77 1.75-.7a7.4 7.4 0 0 0 2.6 1.5l.25 1.8h3.3l.25-1.8a7.4 7.4 0 0 0 2.6-1.5l1.75.7 1.6-2.77Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
@@ -68,8 +69,8 @@
 
     <section id="workspace" class="workspace hidden">
       <aside class="sidebar panel">
-        <div class="panel-heading"><span id="sidebarVaultLabel">Vault locked</span><button id="createVaultButton" class="subtle-button" title="Create New Vault">＋ New vault</button><button id="refreshButton" class="subtle-button" title="Refresh">↻</button></div>
-        <div id="tree" class="tree" aria-label="Vault files and folders"></div>
+        <div class="panel-heading"><span id="sidebarVaultLabel">Vault locked</span><button id="refreshButton" class="subtle-button" title="Refresh">↻</button></div>
+        <div id="tree" class="tree" role="tree" aria-label="Vault files and folders"></div>
         <div class="sidebar-bottom">
           <button id="trashButton" class="nav-action"><span>▤</span> Deleted Items <span id="trashCount" class="count-pill">0</span></button>
           <button id="importRootButton" class="nav-action"><span>＋</span> Add files or folder</button>

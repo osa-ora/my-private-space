@@ -38,3 +38,9 @@
 .sidebar.drag-active { outline: 2px dashed #4b8fe2; outline-offset: -4px; }
 
 .password-meta-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:min(100%,520px);margin:18px auto 0;text-align:left}.password-meta-card{display:grid;gap:6px;min-width:0;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}.password-meta-card span{font-size:11px;color:var(--muted)}.password-meta-card strong{font-size:12px;font-weight:650;overflow-wrap:anywhere}.password-strength{width:min(100%,520px);margin:12px auto 0;padding:14px;border:1px solid var(--border);border-radius:10px;text-align:left}.password-strength-header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px}.password-strength-header span{font-weight:700;color:var(--muted)}.password-strength-track{height:7px;margin-top:11px;border-radius:99px;overflow:hidden;background:var(--soft)}.password-strength-fill{height:100%;width:0;border-radius:99px;background:#d04444;transition:width .2s ease,background .2s ease}.password-strength-fill[data-score="1"]{background:#dd8732}.password-strength-fill[data-score="2"]{background:#d3b52e}.password-strength-fill[data-score="3"]{background:#5b9e61}.password-strength-fill[data-score="4"]{background:#16804a}.password-strength-feedback{font-size:11px;line-height:1.5;color:var(--muted);margin:9px 0 0}@media(max-width:480px){.password-meta-grid{grid-template-columns:1fr}}
+
+/* Clear root destination for drag-and-drop imports. */
+.tree-root-drop{border:1px dashed var(--border);background:color-mix(in srgb,var(--panel) 90%,#78aef5 10%);margin:0 0 7px;}
+.tree-root-drop:hover{background:var(--hover)}
+.tree-root-hint{font-size:10px;color:var(--muted);white-space:nowrap;padding-left:4px}
+@media(max-width:560px){.top-actions{gap:4px}.top-actions .icon-button{width:32px;height:32px;min-width:32px;flex-basis:32px}.top-actions .icon-button svg{width:21px;height:21px}}
