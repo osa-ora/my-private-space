@@ -93,7 +93,7 @@ You can create multiple vaults and switch between them or unregister a vault whe
 
 For a **Password Vault**, select that type during setup or vault creation. The interface provides password-entry management instead of file and folder imports.
 
-<img width="1710" height="833" alt="Screenshot 2026-10-22 at 11 08 26 PM" src="https://github.com/user-attachments/assets/c78a5ef4-8a9f-4577-b98d-96c0b2ae52df" />
+<img width="1701" height="832" alt="Screenshot 2026-10-23 at 12 00 29 AM" src="https://github.com/user-attachments/assets/438630cc-4754-4e29-9c84-bd7bc52656c2" />
 
 Stop the server with `Ctrl+C` in the terminal.
 
