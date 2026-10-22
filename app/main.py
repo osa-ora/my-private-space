@@ -6,6 +6,8 @@ import json
 import mimetypes
 import os
 import secrets
+import subprocess
+import sys
 import shutil
 import socket
 import threading
@@ -108,6 +110,49 @@ def expire_session() -> None:
 
 def touch_session() -> None:
     STATE["last_activity"] = time.monotonic()
+
+def set_directory_hidden(path: Path, hidden: bool) -> bool | None:
+    """Hide/unhide a directory using native OS metadata without renaming it.
+
+    Returns True on success, False on an OS-level failure, and None on platforms
+    where there is no portable, non-renaming hidden-directory flag.
+    """
+    path = Path(path)
+    try:
+        if sys.platform == "darwin":
+            # Finder's hidden flag changes metadata only; the directory name/path
+            # and all contents remain unchanged.
+            subprocess.run(
+                ["chflags", "hidden" if hidden else "nohidden", str(path)],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            )
+            return True
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            get_attributes = kernel32.GetFileAttributesW
+            get_attributes.argtypes = [wintypes.LPCWSTR]
+            get_attributes.restype = wintypes.DWORD
+            set_attributes = kernel32.SetFileAttributesW
+            set_attributes.argtypes = [wintypes.LPCWSTR, wintypes.DWORD]
+            set_attributes.restype = wintypes.BOOL
+            attributes = get_attributes(str(path))
+            invalid = 0xFFFFFFFF
+            if attributes == invalid:
+                return False
+            hidden_flag = 0x2  # FILE_ATTRIBUTE_HIDDEN
+            updated = (attributes | hidden_flag) if hidden else (attributes & ~hidden_flag)
+            if updated == 0:
+                updated = 0x80  # FILE_ATTRIBUTE_NORMAL
+            return bool(set_attributes(str(path), updated))
+        # Linux has no universal hidden attribute for directories. Deliberately
+        # do not rename to a dot-prefixed path or depend on file-manager metadata.
+        return None
+    except (OSError, subprocess.SubprocessError, AttributeError, ImportError):
+        return False
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -250,7 +295,15 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
         prefix = v.get("prefix", "")
         if not isinstance(prefix, str) or (prefix and not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", prefix)):
             raise ValueError("Invalid vault prefix")
-        vaults.append({"id": vid, "label": label.strip(), "location": str(Path(location).expanduser().resolve()), **({"prefix": prefix} if prefix else {})})
+        # Missing visibility settings in older config.me files mean opt-out.
+        # Preserve absence on read; opening an old registry must not rewrite it.
+        manage_visibility = v.get("manage_visibility", False)
+        if not isinstance(manage_visibility, bool):
+            raise ValueError("Invalid vault visibility setting")
+        normalized = {"id": vid, "label": label.strip(), "location": str(Path(location).expanduser().resolve()), **({"prefix": prefix} if prefix else {})}
+        if "manage_visibility" in v:
+            normalized["manage_visibility"] = manage_visibility
+        vaults.append(normalized)
     if not vaults: raise ValueError("No vaults are registered")
     for index, current in enumerate(vaults):
         current_path = Path(current["location"]).resolve()
@@ -407,6 +460,7 @@ class SetupRequest(BaseModel):
     target_directory: str = Field(min_length=1, max_length=4096)
     label: str = Field(min_length=1, max_length=80)
     prefix: str = Field(min_length=1, max_length=32)
+    manage_visibility: bool = False
     password: str
     confirm_password: str
 
@@ -445,11 +499,17 @@ def setup(payload: SetupRequest):
         manifest = {"version": 1, "next_id": 1, "created_at": now_iso(), "entries": {}}
         blob = encrypt_json(key, manifest, b"mps:manifest:v1")
         atomic_write(manifest_path(root), blob)
+        initial_config = {"version": 2, "vaults": [{"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix, "manage_visibility": payload.manage_visibility}], "last_used_vault": None}
         try:
-            save_config(key, {"version": 2, "vaults": [{"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix}], "last_used_vault": None})
-        except Exception:
+            save_config(key, initial_config)
+            if payload.manage_visibility:
+                visibility_result = set_directory_hidden(root, True)
+                if visibility_result is not True:
+                    raise RuntimeError("Folder visibility management is unavailable on this platform or the folder could not be hidden. Disable the option or check filesystem permissions.")
+        except Exception as exc:
+            CONFIG_PATH.unlink(missing_ok=True)
             manifest_path(root).unlink(missing_ok=True)
-            raise
+            raise HTTPException(500, f"Vault setup could not be completed safely: {exc}")
         config = normalize_config(decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1"))
         manifest["_prefix"] = prefix
         STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=config["vaults"][0]["id"], active_vault_label=label, pending_config=None, last_activity=time.monotonic())
@@ -547,10 +607,22 @@ def remove_vault(payload: SelectVaultRequest):
         vault = next((v for v in config["vaults"] if v["id"] == payload.vault_id), None)
         if not vault:
             raise HTTPException(404, "Vault not found in registry.")
+        unhide_result = None
+        if vault.get("manage_visibility", False):
+            unhide_result = set_directory_hidden(Path(vault["location"]), False)
+            if unhide_result is not True:
+                raise HTTPException(500, "This vault's visibility is managed by My Private Space, but its directory could not be made visible. The vault remains registered; check platform support and filesystem permissions.")
         config["vaults"] = [v for v in config["vaults"] if v["id"] != payload.vault_id]
         if config.get("last_used_vault") == payload.vault_id:
             config["last_used_vault"] = STATE.get("active_vault_id") or config["vaults"][0]["id"]
-        save_config(key, config)
+        try:
+            save_config(key, config)
+        except Exception:
+            # Registry update failed: restore the previous visual state where
+            # supported, so a still-registered vault does not become visible.
+            if unhide_result is True:
+                set_directory_hidden(Path(vault["location"]), True)
+            raise
         STATE["vaults"] = config["vaults"]
         if STATE.get("pending_config") is not None:
             STATE["pending_config"] = config
@@ -562,6 +634,7 @@ class CreateVaultRequest(BaseModel):
     label: str = Field(min_length=1, max_length=80)
     prefix: str = Field(min_length=1, max_length=32)
     convert_existing: bool = False
+    manage_visibility: bool = False
 
 
 @app.post("/api/vaults/create")
@@ -686,10 +759,14 @@ def create_vault(payload: CreateVaultRequest):
                 except Exception:
                     raise HTTPException(409, "This folder contains data that could not be verified as a vault for the current main password. Nothing was changed.")
 
-        vault = {"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix}
+        vault = {"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": prefix, "manage_visibility": payload.manage_visibility}
         config["vaults"].append(vault); config["last_used_vault"] = vault["id"]
         try:
             save_config(key, config)
+            if payload.manage_visibility:
+                visibility_result = set_directory_hidden(root, True)
+                if visibility_result is not True:
+                    raise RuntimeError("Folder visibility management is unavailable on this platform or the folder could not be hidden. Disable the option or check filesystem permissions.")
         except Exception:
             if conversion_backup is not None and conversion_backup.exists():
                 try:
@@ -702,6 +779,12 @@ def create_vault(payload: CreateVaultRequest):
                     pass
             elif created_new_manifest:
                 manifest_file.unlink(missing_ok=True)
+            # Restore the prior registry if the save succeeded but visibility
+            # control failed. Keep the original config's missing flags missing.
+            try:
+                save_config(key, {"version": 2, "vaults": [v for v in config["vaults"] if v["id"] != vault["id"]], "last_used_vault": STATE.get("active_vault_id") or config.get("last_used_vault")})
+            except Exception:
+                pass
             raise
         if conversion_backup is not None:
             shutil.rmtree(conversion_backup, ignore_errors=True)
@@ -1227,6 +1310,13 @@ def change_target_directory(payload: TargetDirectoryRequest):
             staging.rmdir()
             # Switch the encrypted bootstrap config only after the copy is verified.
             config = normalize_config(decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1"))
+            active_vault = next((v for v in config["vaults"] if v["id"] == STATE.get("active_vault_id")), None)
+            if active_vault is None:
+                raise RuntimeError("The active vault is missing from the registry.")
+            if active_vault.get("manage_visibility", False):
+                visibility_result = set_directory_hidden(destination, True)
+                if visibility_result is not True:
+                    raise RuntimeError("This vault is configured to manage folder visibility, but the destination could not be hidden.")
             for v in config["vaults"]:
                 if v["id"] == STATE.get("active_vault_id"): v["location"] = str(destination)
             save_config(key, config)

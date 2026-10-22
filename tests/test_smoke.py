@@ -39,6 +39,13 @@ def test_vault_flow(monkeypatch):
         r = client.post("/api/setup", headers=H, json={"label": "Personal", "prefix": "personal-", "target_directory": str(root), "password": "Abc@1234", "confirm_password": "Abc@1234"})
         assert r.status_code == 200, r.text
         assert (root / "manifest.enc").exists()
+        # A missing flag is backward-compatible and must not trigger visibility changes.
+        initial_config = main_module.normalize_config(main_module.decrypt_json(
+            main_module.password_key("Abc@1234"), main_module.CONFIG_PATH.read_bytes(), b"mps:config:v1"))
+        assert initial_config["vaults"][0].get("manage_visibility", False) is False
+
+        visibility_calls = []
+        monkeypatch.setattr(main_module, "set_directory_hidden", lambda path, hidden: visibility_calls.append((Path(path), hidden)) or True)
 
         # Import one file and a nested folder hierarchy.
         files = [
@@ -394,3 +401,66 @@ def test_idle_activity_is_explicit_and_status_does_not_revive_expired_session(mo
     assert response.status_code == 200
     assert response.json()["unlocked"] is False
     assert m.STATE["key"] is None and m.STATE["manifest"] is None
+
+
+def test_native_directory_hidden_flag_does_not_rename(monkeypatch, tmp_path):
+    """macOS hiding uses chflags metadata and leaves the vault path untouched."""
+    import subprocess
+    from app import main as m
+
+    folder = tmp_path / "vault-name"
+    folder.mkdir()
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return None
+
+    monkeypatch.setattr(m.sys, "platform", "darwin")
+    monkeypatch.setattr(m.subprocess, "run", fake_run)
+    assert m.set_directory_hidden(folder, True) is True
+    assert m.set_directory_hidden(folder, False) is True
+    assert calls == [["chflags", "hidden", str(folder)], ["chflags", "nohidden", str(folder)]]
+    assert folder.exists() and folder.name == "vault-name"
+
+
+def test_directory_hidden_flag_failure_is_reported(monkeypatch, tmp_path):
+    from app import main as m
+    import subprocess
+
+    folder = tmp_path / "vault-name"
+    folder.mkdir()
+    monkeypatch.setattr(m.sys, "platform", "darwin")
+    def fail_run(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, args[0], stderr=b"permission denied")
+    monkeypatch.setattr(m.subprocess, "run", fail_run)
+    assert m.set_directory_hidden(folder, True) is False
+    assert folder.exists() and folder.name == "vault-name"
+
+
+def test_linux_hidden_flag_is_safe_noop_without_rename(monkeypatch, tmp_path):
+    from app import main as m
+    folder = tmp_path / "vault-name"
+    folder.mkdir()
+    monkeypatch.setattr(m.sys, "platform", "linux")
+    monkeypatch.setattr(m.os, "name", "posix")
+    assert m.set_directory_hidden(folder, True) is None
+    assert folder.exists() and folder.name == "vault-name"
+
+
+def test_visibility_flag_normalization_and_validation(tmp_path):
+    from app import main as m
+    legacy = {"version": 2, "vaults": [{"id": "v1", "label": "Legacy", "location": str(tmp_path)}], "last_used_vault": "v1"}
+    normalized = m.normalize_config(legacy)
+    assert normalized["vaults"][0].get("manage_visibility", False) is False
+    assert "manage_visibility" not in normalized["vaults"][0]
+    opted_in = {"version": 2, "vaults": [{"id": "v1", "label": "Managed", "location": str(tmp_path), "manage_visibility": True}], "last_used_vault": "v1"}
+    assert m.normalize_config(opted_in)["vaults"][0]["manage_visibility"] is True
+    opted_out = {"version": 2, "vaults": [{"id": "v1", "label": "Visible", "location": str(tmp_path), "manage_visibility": False}], "last_used_vault": "v1"}
+    assert m.normalize_config(opted_out)["vaults"][0]["manage_visibility"] is False
+    invalid = {"version": 2, "vaults": [{"id": "v1", "label": "Bad", "location": str(tmp_path), "manage_visibility": "yes"}], "last_used_vault": "v1"}
+    try:
+        m.normalize_config(invalid)
+        assert False, "non-boolean visibility flag should be rejected"
+    except ValueError as exc:
+        assert "visibility" in str(exc).lower()
