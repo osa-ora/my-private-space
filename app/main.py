@@ -518,6 +518,7 @@ def setup(payload: SetupRequest):
 
 class PasswordRequest(BaseModel):
     password: str
+    resume_last_used: bool = False
 
 
 @app.post("/api/unlock")
@@ -533,9 +534,12 @@ def unlock(payload: PasswordRequest):
         try:
             raw_config = decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1")
             config = normalize_config(raw_config)
-            # Validate all locations without silently discarding missing entries.
-            if len(config["vaults"]) == 1:
-                v = config["vaults"][0]
+            # Resume the last-used vault after a manual or inactivity lock.
+            # The vault picker is only needed when there is no valid last-used
+            # selection (for example, on first login to a multi-vault registry).
+            last_used_id = config.get("last_used_vault")
+            v = next((item for item in config["vaults"] if item["id"] == last_used_id), None) if payload.resume_last_used else None
+            if v is not None:
                 root = Path(v["location"]).expanduser().resolve()
                 if not root.is_dir(): raise HTTPException(404, "The configured vault directory is unavailable. Locate the vault folder before continuing.")
                 manifest = decrypt_json(key, manifest_path(root).read_bytes(), b"mps:manifest:v1")
@@ -591,7 +595,7 @@ def select_vault(payload: SelectVaultRequest):
 
 @app.post("/api/vaults/remove")
 def remove_vault(payload: SelectVaultRequest):
-    """Unregister a non-active vault without deleting its encrypted directory."""
+    """Unregister a vault without deleting its encrypted directory or contents."""
     with MUTATION_LOCK:
         key = STATE.get("key")
         if key is None:
@@ -600,20 +604,49 @@ def remove_vault(payload: SelectVaultRequest):
             config = normalize_config(decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1"))
         except Exception:
             raise HTTPException(500, "The vault registry could not be read.")
-        if len(config["vaults"]) <= 1:
-            raise HTTPException(409, "The last registered vault cannot be removed.")
-        if payload.vault_id == STATE.get("active_vault_id"):
-            raise HTTPException(409, "Switch to another vault before removing this one.")
         vault = next((v for v in config["vaults"] if v["id"] == payload.vault_id), None)
         if not vault:
             raise HTTPException(404, "Vault not found in registry.")
+        # Any registered vault can be removed, including the active one. If the
+        # active vault is removed while others remain, move the session to a
+        # valid remaining vault before committing the registry update.
+        remaining_vaults = [v for v in config["vaults"] if v["id"] != payload.vault_id]
+        fallback_vault = None
+        fallback_root = None
+        fallback_manifest = None
+        removing_active = payload.vault_id == STATE.get("active_vault_id")
+        if removing_active and remaining_vaults:
+            preferred_id = config.get("last_used_vault")
+            fallback_vault = next((v for v in remaining_vaults if v["id"] == preferred_id), remaining_vaults[0])
+            fallback_root = Path(fallback_vault["location"]).expanduser().resolve()
+            try:
+                if not fallback_root.is_dir():
+                    raise ValueError("Vault directory is unavailable")
+                fallback_manifest = decrypt_json(key, manifest_path(fallback_root).read_bytes(), b"mps:manifest:v1")
+                if fallback_manifest.get("version") != 1 or not isinstance(fallback_manifest.get("entries"), dict):
+                    raise ValueError("Invalid manifest")
+            except Exception:
+                raise HTTPException(400, f"Cannot remove the active vault because remaining vault '{fallback_vault['label']}' is unavailable or damaged.")
         unhide_result = None
         if vault.get("manage_visibility", False):
             unhide_result = set_directory_hidden(Path(vault["location"]), False)
             if unhide_result is not True:
                 raise HTTPException(500, "This vault's visibility is managed by My Private Space, but its directory could not be made visible. The vault remains registered; check platform support and filesystem permissions.")
-        config["vaults"] = [v for v in config["vaults"] if v["id"] != payload.vault_id]
-        if config.get("last_used_vault") == payload.vault_id:
+        if len(config["vaults"]) == 1:
+            # Unregister the final vault by removing the encrypted registry only;
+            # its encrypted directory and contents remain available for recovery.
+            try:
+                CONFIG_PATH.unlink(missing_ok=False)
+            except Exception:
+                if unhide_result is True:
+                    set_directory_hidden(Path(vault["location"]), True)
+                raise HTTPException(500, "The vault could not be unregistered because the registry could not be removed.")
+            expire_session()
+            return {"ok": True, "vaults": [], "removed_label": vault["label"], "directory_preserved": True, "requires_setup": True}
+        config["vaults"] = remaining_vaults
+        if removing_active and fallback_vault:
+            config["last_used_vault"] = fallback_vault["id"]
+        elif config.get("last_used_vault") == payload.vault_id:
             config["last_used_vault"] = STATE.get("active_vault_id") or config["vaults"][0]["id"]
         try:
             save_config(key, config)
@@ -624,9 +657,16 @@ def remove_vault(payload: SelectVaultRequest):
                 set_directory_hidden(Path(vault["location"]), True)
             raise
         STATE["vaults"] = config["vaults"]
+        if removing_active and fallback_vault:
+            fallback_manifest["_prefix"] = fallback_vault.get("prefix", "")
+            STATE.update(root=fallback_root, manifest=fallback_manifest, unlocked=True,
+                         active_vault_id=fallback_vault["id"], active_vault_label=fallback_vault["label"],
+                         pending_config=None, last_activity=time.monotonic())
         if STATE.get("pending_config") is not None:
             STATE["pending_config"] = config
-        return {"ok": True, "vaults": config["vaults"], "removed_label": vault["label"], "directory_preserved": True}
+        return {"ok": True, "vaults": config["vaults"], "removed_label": vault["label"],
+                "directory_preserved": True, "active_vault_label": STATE.get("active_vault_label"),
+                "active_vault_changed": bool(removing_active and fallback_vault)}
 
 
 class CreateVaultRequest(BaseModel):

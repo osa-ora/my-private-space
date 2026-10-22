@@ -70,9 +70,22 @@
       closePreviewUrl();
       const blob = await api(`/api/entries/${encodeURIComponent(item.id)}/preview`);
       if (state.selectedId !== item.id || state.selectedEntry?.type === 'folder') return;
-      state.previewUrl = URL.createObjectURL(blob);
       const mime = blob.type || item.mime || 'application/octet-stream';
       const content = $('previewContent'); content.innerHTML = '';
+      const extension = item.name.split('.').pop().toLowerCase();
+      if (['zip', 'docx'].includes(extension)) {
+        closePreviewUrl();
+        content.className = 'preview-content empty-state';
+        const isZip = extension === 'zip';
+        const accent = isZip ? '#b7791f' : '#2563a6';
+        const icon = isZip
+          ? '<svg class="unsupported-file-art" viewBox="0 0 120 140" role="img" aria-label="ZIP archive icon"><path d="M25 7h48l24 24v98a4 4 0 0 1-4 4H25a4 4 0 0 1-4-4V11a4 4 0 0 1 4-4Z" fill="#fff8e8" stroke="#b7791f" stroke-width="3"/><path d="M73 7v25h24" fill="#f5d89c" stroke="#b7791f" stroke-width="3"/><path d="M53 36h14v10H53zm0 12h14v10H53zm0 12h14v10H53zm0 12h14v10H53zm0 12h14v10H53z" fill="#b7791f"/><path d="M45 93h30v18H45z" rx="3" fill="#b7791f"/><text x="60" y="106" text-anchor="middle" font-size="10" font-weight="800" fill="#fff">ZIP</text></svg>'
+          : '<svg class="unsupported-file-art" viewBox="0 0 120 140" role="img" aria-label="Word document icon"><path d="M25 7h48l24 24v98a4 4 0 0 1-4 4H25a4 4 0 0 1-4-4V11a4 4 0 0 1 4-4Z" fill="#edf5ff" stroke="#2563a6" stroke-width="3"/><path d="M73 7v25h24" fill="#c9def8" stroke="#2563a6" stroke-width="3"/><rect x="30" y="48" width="60" height="48" rx="5" fill="#2563a6"/><path d="m39 60 6 26 8-17 8 17 7-26" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><path d="M37 107h46M37 116h36" stroke="#8ab4e6" stroke-width="3" stroke-linecap="round"/></svg>';
+        content.innerHTML = `${icon}<h3>${isZip ? 'ZIP archive' : 'Word document'} selected</h3><p>This file cannot be previewed in My Private Space. To view its contents, open it with a compatible application after exporting or decrypting it.</p>`;
+      } else {
+        state.previewUrl = URL.createObjectURL(blob);
+      }
+      if (['zip', 'docx'].includes(extension)) { await refreshTree(); return; }
       if (mime.startsWith('image/') && mime !== 'image/svg+xml') { const img = document.createElement('img'); img.className = 'preview-image'; img.alt = item.name; img.src = state.previewUrl; content.append(img); }
       else if (mime === 'application/pdf') { const frame = document.createElement('iframe'); frame.className = 'preview-frame'; frame.title = item.name; frame.src = state.previewUrl + '#toolbar=0&navpanes=0'; content.append(frame); }
       else if (mime.startsWith('audio/')) { const media = document.createElement('audio'); media.className = 'preview-media'; media.controls = true; media.src = state.previewUrl; content.append(media); }
@@ -194,6 +207,17 @@
   function setVaultLabel(label) { $('sidebarVaultLabel').textContent = label || 'Vault locked'; }
   function populateVaultPicker(vaults, selectId = 'vaultSelect') { const select = $(selectId); select.innerHTML = ''; for (const vault of vaults) { const option = document.createElement('option'); option.value = vault.id; option.textContent = vault.label; select.append(option); } }
   async function openSelectedVault() { try { const result = await api('/api/vaults/select', {method:'POST', body:JSON.stringify({vault_id:$('vaultSelect').value})}); state.unlocked = true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Opened ${result.vault_label}.`); } catch(e) { showMessage('unlockMessage', e.message); } }
+  function updateVaultManagementButtons(settings) {
+    const vaults = Array.isArray(settings?.vaults) ? settings.vaults : [];
+    const selectedId = $('managedVaultSelect').value;
+    const active = vaults.find(v => v.label === settings?.vault_label);
+    const selectedIsActive = !!active && selectedId === active.id;
+    // Switching to the already active vault is a no-op, so only enable Switch
+    // after the user selects a different vault.
+    $('switchToVaultButton').disabled = !selectedId || selectedIsActive;
+    // Remove must remain available regardless of the selected vault.
+    $('removeVaultButton').disabled = false;
+  }
   async function openVaultManagement() {
     try {
       const settings = await api('/api/settings');
@@ -201,7 +225,7 @@
       const active = (settings.vaults || []).find(v => v.id && v.label === settings.vault_label);
       if (active) $('managedVaultSelect').value = active.id;
       showMessage('vaultManagementMessage', '');
-      $('removeVaultButton').disabled = (settings.vaults || []).length <= 1 || $('managedVaultSelect').value === active?.id;
+      updateVaultManagementButtons(settings);
       $('switchVaultDialog').showModal();
     } catch (e) { toast(e.message); }
   }
@@ -221,17 +245,31 @@
     if (!confirm(`Remove “${label}” from the vault list? Its encrypted directory and contents will be preserved.`)) return;
     try {
       const result = await api('/api/vaults/remove', {method:'POST', body:JSON.stringify({vault_id:vaultId})});
+      if (result.requires_setup) {
+        $('switchVaultDialog').close();
+        localStorage.removeItem('mps-session-locked');
+        clearSensitiveUi();
+        showScreen('setupScreen');
+        showMessage('setupMessage', `Removed “${result.removed_label}” from the registry. Its encrypted directory and contents were preserved. Configure a vault to continue.`, true);
+        toast('No registered vaults remain. Configure a vault to continue.');
+        return;
+      }
       populateVaultPicker(result.vaults, 'managedVaultSelect');
       showMessage('vaultManagementMessage', `Removed “${result.removed_label}” from the list. Its encrypted directory was preserved.`, true);
       const settings = await api('/api/settings');
       const active = (settings.vaults || []).find(v => v.label === settings.vault_label);
       if (active) select.value = active.id;
-      $('removeVaultButton').disabled = (settings.vaults || []).length <= 1 || select.value === active?.id;
+      if (result.active_vault_changed && result.active_vault_label) {
+        setVaultLabel(result.active_vault_label);
+        resetPreview();
+        await refreshTree();
+      }
+      updateVaultManagementButtons(settings);
       toast(`Removed ${result.removed_label} from the list.`);
     } catch (e) { showMessage('vaultManagementMessage', e.message); }
   }
   function openCreateVault() { $('createVaultLabel').value=''; $('createVaultDirectory').value=''; $('createVaultPrefix').value=''; $('convertExistingFolder').checked=false; $('createManageVisibility').checked=false; showMessage('createVaultMessage',''); $('createVaultDialog').showModal(); }
-  async function createVault() { const label=$('createVaultLabel').value.trim(), target_directory=$('createVaultDirectory').value.trim(), prefix=$('createVaultPrefix').value.trim(), convert_existing=$('convertExistingFolder').checked, manage_visibility=$('createManageVisibility').checked; if (!label || !target_directory || !prefix) { showMessage('createVaultMessage','Vault label, destination folder, and storage prefix are required.'); return; } if (convert_existing && !confirm('Convert this ordinary non-empty folder into encrypted vault storage? Files will be encrypted and the originals retained until staging and verification succeed. Continue?')) return; const button=$('confirmCreateVaultButton'); button.disabled=true; try { const result=await api('/api/vaults/create',{method:'POST',body:JSON.stringify({label,target_directory,prefix,convert_existing,manage_visibility})}); $('createVaultDialog').close(); state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Created and opened ${result.vault_label}.`); } catch(e) { showMessage('createVaultMessage',e.message); } finally { button.disabled=false; } }
+  async function createVault() { const label=$('createVaultLabel').value.trim(), target_directory=$('createVaultDirectory').value.trim(), prefix=$('createVaultPrefix').value.trim(), convert_existing=$('convertExistingFolder').checked, manage_visibility=$('createManageVisibility').checked; if (!label || !target_directory || !prefix) { showMessage('createVaultMessage','Vault label, destination folder, and storage prefix are required.'); return; } if (convert_existing && !confirm('Convert this ordinary non-empty folder into encrypted vault storage? Files will be encrypted and the originals retained until staging and verification succeed. Continue?')) return; const button=$('confirmCreateVaultButton'); button.disabled=true; try { const result=await api('/api/vaults/create',{method:'POST',body:JSON.stringify({label,target_directory,prefix,convert_existing,manage_visibility})}); $('createVaultDialog').close(); localStorage.removeItem('mps-session-locked'); state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Created and opened ${result.vault_label}.`); } catch(e) { showMessage('createVaultMessage',e.message); } finally { button.disabled=false; } }
   async function boot() {
     applyTheme(state.theme);
     try {
@@ -249,7 +287,7 @@
   });
   $('unlockForm').addEventListener('submit', async e => {
     e.preventDefault(); showMessage('unlockMessage','Unlocking…');
-    try { const result = await api('/api/unlock',{method:'POST',body:JSON.stringify({password:$('unlockPassword').value})}); $('unlockPassword').value=''; if (!result.selected) { resetIdleClock(); populateVaultPicker(result.vaults); $('vaultPicker').classList.remove('hidden'); $('unlockForm').classList.add('hidden'); showMessage('unlockMessage','Password accepted. Select a vault to continue.',true); return; } state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast('Vault unlocked.'); }
+    try { const result = await api('/api/unlock',{method:'POST',body:JSON.stringify({password:$('unlockPassword').value,resume_last_used:!!localStorage.getItem('mps-session-locked')})}); $('unlockPassword').value=''; if (!result.selected) { localStorage.removeItem('mps-session-locked'); resetIdleClock(); populateVaultPicker(result.vaults); $('vaultPicker').classList.remove('hidden'); $('unlockForm').classList.add('hidden'); showMessage('unlockMessage','Password accepted. Select a vault to continue.',true); return; } state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast('Vault unlocked.'); }
     catch(error) { showMessage('unlockMessage',error.message); }
   });
   $('lockVaultButton').addEventListener('click', async () => { if (!confirm('Lock My Private Space now?')) return; try { await api('/api/lock',{method:'POST'}); localStorage.setItem('mps-session-locked', String(Date.now())); clearSensitiveUi(); toast('Vault locked.'); } catch(e) { toast(e.message); } });
@@ -257,7 +295,7 @@
   $('switchVaultButton').addEventListener('click', openVaultManagement);
   $('switchToVaultButton').addEventListener('click', switchToManagedVault);
   $('removeVaultButton').addEventListener('click', removeManagedVault);
-  $('managedVaultSelect').addEventListener('change', async () => { try { const settings = await api('/api/settings'); const active = (settings.vaults || []).find(v => v.label === settings.vault_label); $('removeVaultButton').disabled = (settings.vaults || []).length <= 1 || $('managedVaultSelect').value === active?.id; } catch {} });
+  $('managedVaultSelect').addEventListener('change', async () => { try { const settings = await api('/api/settings'); updateVaultManagementButtons(settings); } catch {} });
   $('createVaultFromLoginButton').addEventListener('click', openCreateVault);
   $('createVaultButton').addEventListener('click', openCreateVault);
   $('createVaultSettingsButton').addEventListener('click', openCreateVault);

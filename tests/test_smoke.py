@@ -118,7 +118,14 @@ def test_vault_flow(monkeypatch):
         assert r.status_code == 200, r.text
         client.post("/api/lock", headers=H)
         assert client.post("/api/unlock", headers=H, json={"password": "Abc@1234"}).status_code == 401
-        assert client.post("/api/unlock", headers=H, json={"password": "Xyz#9876"}).status_code == 200
+        single_login = client.post("/api/unlock", headers=H, json={"password": "Xyz#9876"})
+        assert single_login.status_code == 200 and single_login.json()["selected"] is False
+        personal_id = single_login.json()["vaults"][0]["id"]
+        assert client.post("/api/vaults/select", headers=H, json={"vault_id": personal_id}).status_code == 200
+        client.post("/api/lock", headers=H)
+        resumed = client.post("/api/unlock", headers=H, json={"password":"Xyz#9876", "resume_last_used":True})
+        assert resumed.status_code == 200 and resumed.json()["selected"] is True
+        assert resumed.json()["vault_label"] == "Personal"
         assert client.get(f"/api/entries/{file_entry['id']}/preview", headers=H).content == b"hello private world"
 
         # Relocation copies and verifies before switching config.
@@ -206,7 +213,6 @@ def test_vault_flow(monkeypatch):
         assert (destination / "manifest.enc").exists()  # copied/active Work vault is intact
         assert (root / "manifest.enc").exists()  # unregistered Personal vault data is not deleted
         assert {v["label"] for v in client.get("/api/settings", headers=H).json()["vaults"]} == {"Work"}
-        assert client.post("/api/vaults/remove", headers=H, json={"vault_id": work_id}).status_code == 409
 
         # Removing a vault unregisters it only; its existing encrypted directory can
         # be registered again later without reinitializing or losing its contents.
@@ -313,6 +319,36 @@ def test_vault_flow(monkeypatch):
         blocked = client.post("/api/unlock", headers=H, json={"password":"New#5678"})
         assert blocked.status_code == 429
         assert main_module.STATE["unlocked"] is False
+
+        # A normal login must show the vault picker even when only one vault is registered.
+        main_module.LOGIN_STATE.update(failed_attempts=0, locked_until=0)
+        main_module._write_login_state(main_module.LOGIN_STATE)
+        login = client.post("/api/unlock", headers=H, json={"password":"New#5678"})
+        assert login.status_code == 200 and login.json()["selected"] is False
+        vaults = login.json()["vaults"]
+        assert len(vaults) >= 1
+        selected_id = vaults[0]["id"]
+        assert client.post("/api/vaults/select", headers=H, json={"vault_id":selected_id}).status_code == 200
+
+        # Any vault can be removed, including the active one. Removing an active
+        # vault switches the unlocked session to another registered vault; removing
+        # the final vault returns the app to setup. Encrypted directories are kept.
+        current = client.get("/api/settings", headers=H).json()
+        preserved_paths = [Path(v["location"]) for v in current["vaults"]]
+        for vault in list(current["vaults"]):
+            current_vaults = client.get("/api/settings", headers=H).json()["vaults"]
+            if not any(v["id"] == vault["id"] for v in current_vaults):
+                continue
+            removed = client.post("/api/vaults/remove", headers=H, json={"vault_id":vault["id"]})
+            assert removed.status_code == 200, removed.text
+            if removed.json().get("requires_setup"):
+                break
+            assert client.get("/api/settings", headers=H).status_code == 200
+        assert not main_module.CONFIG_PATH.exists()
+        assert not main_module.CONFIG_PATH.exists()
+        assert main_module.STATE["key"] is None and main_module.STATE["unlocked"] is False
+        assert all(path.joinpath("manifest.enc").exists() for path in preserved_paths)
+        assert client.get("/api/status", headers=H).json()["configured"] is False
 
 
 def test_state_me_encoding_and_idle_expiration(monkeypatch):

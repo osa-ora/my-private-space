@@ -7,7 +7,7 @@
   <meta name="color-scheme" content="light dark">
   <title>{{ app_name }}</title>
   <link rel="stylesheet" href="/static/css/app.css">
-  <script defer src="/static/js/app.js"></script>
+  <script defer src="/static/js/app.js?v=3"></script>
 </head>
 <body data-theme="light-navy">
   <header class="topbar">
@@ -108,7 +108,7 @@
 
   <dialog id="switchVaultDialog" class="modal small-modal">
     <form method="dialog" class="modal-head"><div><div class="eyebrow">VAULT MANAGEMENT</div><h2>Switch or Remove Vault</h2></div><button class="icon-button" value="cancel" aria-label="Close vault management">×</button></form>
-    <div class="modal-body form-stack"><label for="managedVaultSelect">Registered vaults</label><select id="managedVaultSelect"></select><p class="muted small">Removing a vault only unregisters it; its encrypted directory and contents are preserved.</p><button id="switchToVaultButton" class="primary-button" type="button">Switch to selected vault</button><button id="removeVaultButton" class="secondary-button danger-button" type="button">Remove selected vault</button><div id="vaultManagementMessage" class="message" role="status"></div></div>
+    <div class="modal-body form-stack"><label for="managedVaultSelect">Registered vaults</label><select id="managedVaultSelect"></select><p class="muted small">Removing a vault only unregisters it; its encrypted directory and contents are preserved. Removing the final vault returns the app to setup.</p><button id="switchToVaultButton" class="primary-button" type="button">Switch to selected vault</button><button id="removeVaultButton" class="secondary-button danger-button" type="button">Remove selected vault</button><div id="vaultManagementMessage" class="message" role="status"></div></div>
   </dialog>
 
   <dialog id="createVaultDialog" class="modal small-modal">
