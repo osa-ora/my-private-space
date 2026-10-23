@@ -83,17 +83,17 @@ A local-first encrypted vault application with file and password vaults, multi-v
 4. Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/) if the application does not open automatically.
 5. On first run, choose the vault type, vault label, storage prefix, vault directory, and main password as requested by the setup screen.
 
-For a **File Vault**, you can then add files and folders to the vault.
+For a **File Vault**, you can then add files and folders to the vault, either by drag and drop or by clicking on the Add files or folder button.
 
 <img width="1705" height="714" alt="My Private Space file vault interface" src="https://github.com/user-attachments/assets/9dda66da-9b4d-4299-bf10-12fd7d65bf75" />
 
 You can create multiple vaults and switch between them or unregister a vault when it is no longer needed.
 
-<img width="1713" height="836" alt="My Private Space vault management" src="https://github.com/user-attachments/assets/c11a424f-a403-4f8f-b7a3-0b9b8dda7bd2" />
+<img width="1718" height="850" alt="Screenshot 2026-10-23 at 8 45 04 AM" src="https://github.com/user-attachments/assets/4041698b-f36a-4b2e-b844-17aa09457c74" />
 
 For a **Password Vault**, select that type during setup or vault creation. The interface provides password-entry management instead of file and folder imports.
 
-<img width="1701" height="832" alt="Screenshot 2026-10-23 at 12 00 29 AM" src="https://github.com/user-attachments/assets/438630cc-4754-4e29-9c84-bd7bc52656c2" />
+<img width="1712" height="843" alt="Screenshot 2026-10-23 at 8 45 46 AM" src="https://github.com/user-attachments/assets/fc1a834e-505f-4ae4-9d09-0388db916f64" />
 
 Stop the server with `Ctrl+C` in the terminal.
 
