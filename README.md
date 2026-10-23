@@ -18,13 +18,16 @@ A local-first encrypted vault application with file and password vaults, multi-v
 - **Two vault types:** Choose between a File Vault for files and folders or a Password Vault for storing sensitive password entries.
 - **Encrypted storage:** Protects file contents, password entries, vault manifests, and the application registry using authenticated encryption.
 - **Multiple vaults:** Manage separate vaults with one main password, switch between them, and store them in independent directories.
-- **Drag-and-drop imports:** Add files and folders by dragging them into the application, with the destination determined by the drop target.
+- **Drag-and-drop imports:** Add files and folders by dragging them into the application, including directly into the vault root or a nested folder.
 - **Password management:** Add, view, copy, update, and delete password entries. Passwords remain masked by default.
+- **Password-entry metadata:** Display creation and last-updated timestamps and a local password-strength estimate.
 - **Visibility management:** Optionally let My Private Space hide a vault directory when registered and make it visible when unregistered, without renaming the directory.
 - **Familiar interface:** Browse folders, preview supported files, play supported media, and use light or dark themes in a desktop browser.
 - **Recoverable deletion:** Move supported items to Deleted Items and restore them before permanent deletion.
 - **Independent secondary locks:** Protect selected files and folders with separate passwords.
 - **Session protection:** Persistent login-attempt lockout and automatic locking after five minutes of inactivity.
+- **Background startup:** The launch scripts start the application without requiring the launching terminal to remain occupied during normal startup.
+- **Lifecycle controls:** Check server status, stop the server, and use the in-app Exit control to request graceful shutdown.
 - **Simple technology stack:** Python backend and plain HTML, CSS, and JavaScript frontend. No Node.js or cloud service required.
 
 ## Contents
@@ -46,9 +49,11 @@ A local-first encrypted vault application with file and password vaults, multi-v
 | Vault management | Create, select, switch, lock, relocate, register, and unregister vaults |
 | Vault setup | Create a vault in an empty directory, register an existing valid vault, or explicitly convert an ordinary folder into a File Vault |
 | Encrypted files | Encrypt file contents and maintain the vault hierarchy in an encrypted manifest |
-| Drag-and-drop | Import files and folders by dropping them into the tree or designated import area |
-| Import destinations | Detect the destination from the selected folder or drop target, including nested folders |
+| Drag-and-drop | Import files and folders by dropping them into the tree or designated import area, including the vault-root drop target |
+| Import destinations | Detect the destination from the drop target, including the vault root and nested folders |
 | Password entries | Add, view, copy, update, and delete password entries in Password Vaults |
+| Password metadata | Record creation and last-updated timestamps for password entries |
+| Password-strength indicator | Provide a local heuristic estimate of password strength; it is not a formal crack-time or security guarantee |
 | Masked passwords | Display stored password values as `***` by default, with an explicit Show action |
 | Organization | Browse nested folders and import files and folders recursively |
 | Previews and media | View supported images, PDFs, text, and Markdown; play supported audio and video |
@@ -60,6 +65,7 @@ A local-first encrypted vault application with file and password vaults, multi-v
 | Main password | Change the shared main password across registered vaults using staged updates and recovery support |
 | Storage IDs | Configure a prefix for new physical IDs in each new vault, such as `work-0001` |
 | Appearance | Light and dark themes |
+| Application lifecycle | Start in the background, check status, stop the server, and request shutdown through the in-app Exit control |
 
 ## Get started
 
@@ -80,31 +86,52 @@ A local-first encrypted vault application with file and password vaults, multi-v
    ./run.sh
    ```
 
-4. Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/) if the application does not open automatically.
-5. On first run, choose the vault type, vault label, storage prefix, vault directory, and main password as requested by the setup screen.
+4. The launcher starts the application in the background and returns control to the terminal. Startup may continue while the virtual environment and dependencies are prepared.
+5. The launcher opens the browser when the server is ready. If it does not open automatically, visit [http://127.0.0.1:8765/](http://127.0.0.1:8765/).
+6. On first run, choose the vault type, vault label, storage prefix, vault directory, and main password as requested by the setup screen.
 
-For a **File Vault**, you can then add files and folders to the vault, either by drag and drop or by clicking on the Add files or folder button.
+For a **File Vault**, you can add files and folders either by drag and drop or by clicking the Add files or folder button.
 
-<img width="1705" height="714" alt="My Private Space file vault interface" src="https://github.com/user-attachments/assets/9dda66da-9b4d-4299-bf10-12fd7d65bf75" />
+<img width="1715" height="781" alt="Screenshot 2026-10-23 at 11 05 28 AM" src="https://github.com/user-attachments/assets/4b19423f-09ec-41a8-90f8-bc69a1ffc96a" />
 
 You can create multiple vaults and switch between them or unregister a vault when it is no longer needed.
 
-<img width="1718" height="850" alt="Screenshot 2026-10-23 at 8 45 04 AM" src="https://github.com/user-attachments/assets/4041698b-f36a-4b2e-b844-17aa09457c74" />
+<img width="1709" height="849" alt="Screenshot 2026-10-23 at 11 05 51 AM" src="https://github.com/user-attachments/assets/93ce8d25-d2f6-431c-a716-b884f7616ea7" />
 
 For a **Password Vault**, select that type during setup or vault creation. The interface provides password-entry management instead of file and folder imports.
 
-<img width="1712" height="843" alt="Screenshot 2026-10-23 at 8 45 46 AM" src="https://github.com/user-attachments/assets/fc1a834e-505f-4ae4-9d09-0388db916f64" />
+<img width="1718" height="842" alt="Screenshot 2026-10-23 at 11 06 30 AM" src="https://github.com/user-attachments/assets/41c163eb-3646-4075-9372-3b725dde0d05" />
 
-Stop the server with `Ctrl+C` in the terminal.
+#### macOS/Linux lifecycle commands
+
+Run these commands from the project directory:
+
+```bash
+./run.sh start
+# or simply:
+./run.sh
+
+./run.sh status
+./run.sh stop
+```
+
+- `start` starts the application in the background.
+- `status` checks whether the application server is running.
+- `stop` requests that the application server stop.
+
+The launcher keeps its runtime state and log outside the project directory. The server log is stored at `~/.my-private-space/server.log`.
+
+The in-app **Exit** control asks for confirmation and requests graceful server shutdown. It also attempts to close the browser tab. Browsers generally prevent scripts from closing tabs that the user opened manually; if the tab remains open, follow the message displayed by the application.
 
 ### Windows
 
 1. Install Python 3.11 or newer and ensure the Python launcher (`py`) is available.
 2. Extract the repository.
 3. Double-click `run.bat`, or run it from Command Prompt.
-4. Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/) if needed.
+4. The Windows launcher uses `run.ps1` to manage startup and lifecycle operations.
+5. Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/) if needed.
 
-Stop the server with `Ctrl+C` or close its terminal window.
+The launcher supports `start`, `status`, and `stop` operations. The in-app **Exit** control requests graceful server shutdown; closing the browser tab itself is subject to browser restrictions.
 
 ### Use a different port
 
@@ -135,7 +162,7 @@ A File Vault stores files and folders. Its interface supports:
 
 - Creating and navigating nested folders.
 - Adding files and folders through the import interface or drag-and-drop.
-- Importing content into the root or a nested folder.
+- Importing content into the vault root or a nested folder.
 - Previewing supported file types and playing supported media.
 - Using Deleted Items to recover supported deleted content.
 - Applying independent secondary passwords to selected files and folders.
@@ -150,6 +177,8 @@ A Password Vault stores password entries rather than files. Its interface provid
 - Revealing a password using **Show**, with the ability to hide it again.
 - Copying a password using **Copy**.
 - Updating or deleting an entry using its contextual menu.
+- Displaying the entry's creation and last-updated timestamps.
+- Showing a local password-strength estimate.
 
 File and folder import operations are not available in a Password Vault. The interface is designed around password entries rather than a filesystem tree.
 
@@ -182,6 +211,7 @@ File Vaults support drag-and-drop imports.
 - Dropping files or folders onto a folder targets that folder.
 - Dropping onto a file targets the file's parent folder.
 - Dropping onto a nested folder targets that nested folder.
+- Dropping onto the designated vault-root drop target imports into the root.
 - The import interface displays the target location so that you can verify where content will be added.
 
 The target is determined from the drop destination and current selection, according to the interface's targeting rules. Review the displayed destination before confirming an import.
@@ -249,6 +279,10 @@ The password-entry workflow supports:
 5. **Update:** Modify an existing entry.
 6. **Delete:** Remove an entry through its contextual menu.
 
+Password entries record their creation time and last-updated time. The creation timestamp is set when the entry is created; the last-updated timestamp changes when the entry is edited and saved. Viewing, revealing, or copying an entry should not be treated as an edit.
+
+The application also displays a **local password-strength estimate**. This is a heuristic intended to provide a quick indication, not a guarantee of password security or a precise estimate of resistance to cracking.
+
 Password values are masked by default in the preview. The user must explicitly choose to reveal a password.
 
 ### Password handling and privacy
@@ -273,12 +307,14 @@ My Private Space is intended for local use, but **local-first does not mean secu
 - **Local computer access:** A person or process controlling the computer may be able to inspect application memory, capture decrypted content, or access files and revealed passwords while the vault is unlocked.
 - **Visible physical structure:** Physical directory names and file-versus-folder structure are visible on disk. Original names and file contents are represented through the encrypted metadata and storage format.
 - **Password visibility:** Password entries are masked in the interface by default, but a user can reveal or copy them while authenticated. Masking is a UI safeguard, not an encryption mechanism.
+- **Password-strength estimate:** The strength indicator is a local heuristic. It does not verify whether a password has been exposed in a breach and does not provide a reliable crack-time guarantee.
 - **Clipboard exposure:** Copied passwords may be accessible to other applications or clipboard managers.
 - **Folder visibility:** Hiding a directory does not protect it from discovery or unauthorized access. Filesystem permissions and encryption remain separate concerns.
 - **Login state obfuscation:** `state.me` uses JSON, a fixed reversible transformation, and Base64. This is obfuscation only—not encryption, integrity protection, or tamper resistance. It does not contain passwords or derived secrets.
 - **Session clearing:** The application expires unlocked sessions after five minutes of inactivity and clears UI previews when locking. This cannot erase screenshots, operating-system captures, clipboard copies, or copies made elsewhere.
 - **Transaction recovery:** Password changes, relocation, and conversion use staging, verification, and recovery mechanisms, but these paths have not been exhaustively tested under every power-loss or filesystem-failure condition.
 - **Local API:** The server binds to loopback and uses host/origin and per-process API-token protections. These controls are not a substitute for an independent security review.
+- **Browser shutdown behavior:** The Exit control requests graceful server shutdown and attempts to close the browser tab. Browsers may block scripts from closing tabs that the user opened manually; the server shutdown request and the browser tab's closure are separate behaviors.
 
 Use a strong, unique main password, keep your operating system updated, and lock the vault when leaving the computer unattended.
 
@@ -299,6 +335,7 @@ Important files include:
 | `state.me` | Persistent failed-login and lockout state |
 | Vault directories | Encrypted manifests and stored content, including password-vault data |
 | Transaction journals and recovery artifacts | May be needed to recover an interrupted operation |
+| `server.log` | Runtime log used to diagnose startup and server issues |
 
 A valid vault can be registered again if the registry is lost, provided the vault directory and correct main password are available.
 
@@ -394,11 +431,15 @@ On Windows, activate the environment using:
 python -m pip install -r requirements.txt
 ```
 
-### Run the application
+### Run the application directly
+
+For development, you can run the Python entry point directly:
 
 ```bash
 python run.py
 ```
+
+This runs the server in the foreground, so the terminal remains attached to the process. Use the platform launchers described above for background startup and lifecycle management.
 
 ### Run automated tests
 
@@ -415,7 +456,7 @@ python -m py_compile app/main.py run.py
 node --check app/static/js/app.js
 ```
 
-Automated tests do not replace interactive browser testing or testing on each target operating system. Before using a new build with real data, exercise vault creation for both vault types, registration, conversion, visibility management, drag-and-drop imports, password creation and updates, clipboard operations, password changes, login lockout, inactivity expiration, Deleted Items restoration, and recovery using disposable directories.
+Automated tests do not replace interactive browser testing or testing on each target operating system. Before using a new build with real data, exercise vault creation for both vault types, registration, conversion, visibility management, drag-and-drop imports into the root and nested folders, password creation and updates, timestamp behavior, password-strength display, clipboard operations, password changes, login lockout, inactivity expiration, launcher start/status/stop, Exit behavior, Deleted Items restoration, and recovery using disposable directories.
 
 ## Project structure
 
@@ -434,8 +475,9 @@ my-private-space/
 ├── requirements.txt
 ├── pyproject.toml
 ├── run.py
-├── run.sh
-└── run.bat
+├── run.sh                   # macOS/Linux launcher
+├── run.bat                  # Windows entry point
+└── run.ps1                  # Windows lifecycle implementation
 ```
 
 ---
