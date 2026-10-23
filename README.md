@@ -12,9 +12,6 @@ A local-first encrypted vault app with both file vaults and password vaults, mul
 
 ---
 
-> [!WARNING]
-> **Beta software — use with care.** My Private Space has not undergone an independent security audit. Back up your data before use, test with disposable files first, and do not rely on this beta as the only copy of important or irreplaceable data.
-
 ## At a glance
 
 - **Local-first:** the application binds to `127.0.0.1` and works with files on your own computer.
@@ -247,5 +244,7 @@ my-private-space/
 **My Private Space · Version 1.0 Beta**
 
 Built for local-first file privacy. Back up first, and use the beta thoughtfully.
+
+[!WARNING] **Beta software — use with care.** 
 
 </div>
