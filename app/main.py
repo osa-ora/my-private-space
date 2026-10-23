@@ -60,6 +60,8 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 # One process-wide token, rendered only into the same-origin UI and required for API requests.
 API_TOKEN = secrets.token_urlsafe(32)
+SERVER = None
+PID_FILE = APP_HOME / "server.pid"
 STATE: dict[str, Any] = {"root": None, "key": None, "manifest": None, "unlocked": False, "vaults": [], "active_vault_id": None, "active_vault_label": None, "active_vault_type": "file", "pending_config": None, "last_activity": None}
 MUTATION_LOCK = threading.RLock()
 
@@ -1676,22 +1678,49 @@ def health():
     return {"ok": True, "version": "0.1.0"}
 
 
+@app.post("/api/shutdown")
+def shutdown_application():
+    """Clear in-memory session secrets and request a graceful server shutdown."""
+    expire_session()
+
+    def stop_after_response():
+        # Allow the HTTP response to reach the browser before stopping Uvicorn.
+        time.sleep(0.5)
+        server = SERVER
+        if server is not None:
+            server.should_exit = True
+
+    threading.Thread(target=stop_after_response, daemon=True, name="mps-shutdown").start()
+    return {"ok": True, "message": "My Private Space is shutting down."}
+
+
 def main() -> None:
     import uvicorn
+    global SERVER
     host, port = "127.0.0.1", int(os.environ.get("MPS_PORT", "8765"))
     url = f"http://{host}:{port}/"
     # Delay browser opening until the server is listening.
     def open_browser():
-        import time
-        for _ in range(50):
+        for _ in range(100):
             try:
                 with socket.create_connection((host, port), timeout=0.2):
-                    break
+                    webbrowser.open(url)
+                    return
             except OSError:
                 time.sleep(0.1)
-        webbrowser.open(url)
     threading.Thread(target=open_browser, daemon=True).start()
-    uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False)
+    config = uvicorn.Config(app, host=host, port=port, log_level="warning", access_log=False)
+    SERVER = uvicorn.Server(config)
+    try:
+        SERVER.run()
+    finally:
+        expire_session()
+        # Remove only our own PID file; never delete a PID file for another process.
+        try:
+            if PID_FILE.exists() and PID_FILE.read_text(encoding="utf-8").strip() == str(os.getpid()):
+                PID_FILE.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":

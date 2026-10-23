@@ -25,6 +25,7 @@ def test_homepage_renders_template():
     assert 'Create New Vault' in response.text
     assert 'id="sidebarVaultLabel"' in response.text
     assert 'id="switchVaultButton"' in response.text
+    assert 'id="closeAppButton"' in response.text
     assert 'id="switchVaultDialog"' in response.text
 
 

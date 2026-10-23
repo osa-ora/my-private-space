@@ -44,3 +44,5 @@
 .tree-root-drop:hover{background:var(--hover)}
 .tree-root-hint{font-size:10px;color:var(--muted);white-space:nowrap;padding-left:4px}
 @media(max-width:560px){.top-actions{gap:4px}.top-actions .icon-button{width:32px;height:32px;min-width:32px;flex-basis:32px}.top-actions .icon-button svg{width:21px;height:21px}}
+
+.shutdown-screen{min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--text)}.shutdown-card{width:min(100%,460px);padding:36px;text-align:center;background:var(--panel);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow)}.shutdown-mark{width:54px;height:54px;margin:0 auto 16px;border-radius:50%;display:grid;place-items:center;background:#e4f6eb;color:#16804a;font-size:28px;font-weight:700}.shutdown-card p{color:var(--muted);font-size:13px;line-height:1.7}

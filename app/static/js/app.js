@@ -618,6 +618,22 @@
     catch(error) { showMessage('unlockMessage',error.message); }
   });
   $('lockVaultButton').addEventListener('click', async () => { if (!confirm('Lock My Private Space now?')) return; try { await api('/api/lock',{method:'POST'}); localStorage.setItem('mps-session-locked', String(Date.now())); clearSensitiveUi(); toast('Vault locked.'); } catch(e) { toast(e.message); } });
+  $('closeAppButton').addEventListener('click', async () => {
+    if (!confirm('Exit My Private Space and shut down its local server?')) return;
+    const button = $('closeAppButton');
+    button.disabled = true;
+    try {
+      await api('/api/shutdown', {method: 'POST'});
+      closePreviewUrl();
+      document.body.innerHTML = '<main class="shutdown-screen"><div class="shutdown-card"><div class="shutdown-mark">✓</div><h1>My Private Space has stopped</h1><p>The local server has been asked to shut down. You can close this tab.</p></div></main>';
+      document.title = 'My Private Space — Stopped';
+      // Browsers may block closing tabs that were not opened by this script.
+      window.close();
+    } catch (e) {
+      button.disabled = false;
+      toast(`Could not stop My Private Space: ${e.message}`);
+    }
+  });
   $('openSelectedVaultButton').addEventListener('click', openSelectedVault);
   $('switchVaultButton').addEventListener('click', openVaultManagement);
   $('switchToVaultButton').addEventListener('click', switchToManagedVault);
