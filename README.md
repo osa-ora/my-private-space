@@ -182,6 +182,8 @@ A Notes Vault stores named text notes rather than files or passwords. Its interf
 - Editing the note name or text.
 - Moving a note to Deleted Items and restoring it when needed.
 
+<img width="1714" height="842" alt="Screenshot 2026-11-02 at 11 22 08 PM" src="https://github.com/user-attachments/assets/3b8d0765-a8a5-42d6-ae16-e37492255b3d" />
+
 Note text is encrypted as an individual payload using the vault's main key. The encrypted manifest stores the note name, timestamps, and size; it does not store the plaintext note content. Notes are protected by the main vault password and do not use secondary item locks.
 
 File and folder import operations are not available in a Notes Vault. The interface is designed around named text notes.
