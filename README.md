@@ -4,7 +4,7 @@
 
 ### Your files. Your passwords. Your machine. Your private space.
 
-A local-first encrypted vault application with file and password vaults, multi-vault management, drag-and-drop imports, and recoverable operations — powered by Python, FastAPI, and vanilla JavaScript.
+A local-first encrypted vault application with file, password, and notes vaults, multi-vault management, drag-and-drop imports, and recoverable operations — powered by Python, FastAPI, and vanilla JavaScript.
 
 **Version 1.0 Beta** · Runs locally
 
@@ -15,11 +15,12 @@ A local-first encrypted vault application with file and password vaults, multi-v
 ## At a glance
 
 - **Local-first:** Runs on your computer and binds to `127.0.0.1`.
-- **Two vault types:** Choose between a File Vault for files and folders or a Password Vault for storing sensitive password entries.
-- **Encrypted storage:** Protects file contents, password entries, vault manifests, and the application registry using authenticated encryption.
+- **Three vault types:** Choose a File Vault for files and folders, a Password Vault for sensitive password entries, or a Notes Vault for named text notes.
+- **Encrypted storage:** Protects file contents, password entries, notes, vault manifests, and the application registry using authenticated encryption.
 - **Multiple vaults:** Manage separate vaults with one main password, switch between them, and store them in independent directories.
 - **Drag-and-drop imports:** Add files and folders by dragging them into the application, with the destination determined by the drop target.
 - **Password management:** Add, view, copy, update, and delete password entries. Passwords remain masked by default.
+- **Notes:** Add named notes with multiline text, view and edit them, and move them to Deleted Items.
 - **Visibility management:** Optionally let My Private Space hide a vault directory when registered and make it visible when unregistered, without renaming the directory.
 - **Familiar interface:** Browse folders, preview supported files, play supported media, and use light or dark themes in a desktop browser.
 - **Recoverable deletion:** Move supported items to Deleted Items and restore them before permanent deletion.
@@ -33,6 +34,7 @@ A local-first encrypted vault application with file and password vaults, multi-v
 - [Get started](#get-started)
 - [How vaults work](#how-vaults-work)
 - [Password vaults](#password-vaults)
+- [Notes vaults](#notes-vaults)
 - [Security model and limitations](#security-model-and-limitations)
 - [Backups and recovery](#backups-and-recovery)
 - [Development and tests](#development-and-tests)
@@ -42,7 +44,7 @@ A local-first encrypted vault application with file and password vaults, multi-v
 
 | Area | Capabilities |
 |---|---|
-| Vault types | Create File Vaults or Password Vaults during initial setup or when creating additional vaults |
+| Vault types | Create File Vaults, Password Vaults, or Notes Vaults during initial setup or when creating additional vaults |
 | Vault management | Create, select, switch, lock, relocate, register, and unregister vaults |
 | Vault setup | Create a vault in an empty directory, register an existing valid vault, or explicitly convert an ordinary folder into a File Vault |
 | Encrypted files | Encrypt file contents and maintain the vault hierarchy in an encrypted manifest |
@@ -50,6 +52,7 @@ A local-first encrypted vault application with file and password vaults, multi-v
 | Import destinations | Detect the destination from the selected folder or drop target, including nested folders |
 | Password entries | Add, view, copy, update, and delete password entries in Password Vaults |
 | Masked passwords | Display stored password values as `***` by default, with an explicit Show action |
+| Notes | Add, view, edit, and delete named multiline text notes in Notes Vaults |
 | Organization | Browse nested folders and import files and folders recursively |
 | Previews and media | View supported images, PDFs, text, and Markdown; play supported audio and video |
 | Archive and document previews | Display appropriate icons and guidance for file types that cannot be previewed directly, such as ZIP and DOCX |
@@ -102,7 +105,7 @@ You can create multiple vaults and switch between them or unregister a vault whe
 
 <img width="1718" height="842" alt="Screenshot 2026-10-23 at 11 06 30 AM" src="https://github.com/user-attachments/assets/41c163eb-3646-4075-9372-3b725dde0d05" />
 
-For a **Password Vault**, select that type during setup or vault creation. The interface provides password-entry management instead of file and folder imports.
+For a **Password Vault**, select that type during setup or vault creation. The interface provides password-entry management instead of file and folder imports. For a **Notes Vault**, add named notes containing multiline text; select a note to read it or use its actions to edit or delete it.
 
 <img width="1709" height="849" alt="Screenshot 2026-10-23 at 11 05 51 AM" src="https://github.com/user-attachments/assets/93ce8d25-d2f6-431c-a716-b884f7616ea7" />
 
@@ -142,9 +145,9 @@ run.bat
 
 ## How vaults work
 
-### File Vault and Password Vault
+### File Vault, Password Vault, and Notes Vault
 
-My Private Space supports two vault types.
+My Private Space supports three vault types.
 
 **File Vault**
 
@@ -169,6 +172,19 @@ A Password Vault stores password entries rather than files. Its interface provid
 - Updating or deleting an entry using its contextual menu.
 
 File and folder import operations are not available in a Password Vault. The interface is designed around password entries rather than a filesystem tree.
+
+**Notes Vault**
+
+A Notes Vault stores named text notes rather than files or passwords. Its interface provides:
+
+- Creating a note with a name and multiline text content.
+- Selecting a note to read its contents in the preview panel.
+- Editing the note name or text.
+- Moving a note to Deleted Items and restoring it when needed.
+
+Note text is encrypted as an individual payload using the vault's main key. The encrypted manifest stores the note name, timestamps, and size; it does not store the plaintext note content. Notes are protected by the main vault password and do not use secondary item locks.
+
+File and folder import operations are not available in a Notes Vault. The interface is designed around named text notes.
 
 A vault has a type, and the application must treat it consistently when opening and operating on that vault. Existing vaults created before vault types were introduced default to the File Vault type for backward compatibility.
 
@@ -282,6 +298,27 @@ Back up the application configuration directory and the directories containing a
 
 Do not edit encrypted password-vault data or manifest files manually. If a vault is lost, corrupted, or no longer recognized, preserve the original directory and any available backups before attempting recovery.
 
+## Notes vaults
+
+### Add and manage notes
+
+A Notes Vault is intended for named text content stored separately from files and password entries. Select the Notes Vault type during initial setup or when creating an additional vault.
+
+The note workflow supports:
+
+1. **Add note:** Enter a note name and multiline text.
+2. **Read:** Select a note in the navigator to display its contents.
+3. **Edit:** Update the note name or text.
+4. **Delete:** Move the note to Deleted Items, where it can be restored or permanently deleted.
+
+Each note's text is encrypted independently before being written to its vault storage file. The encrypted manifest contains note metadata, including its name, byte size, and creation/update timestamps. The note content is returned to the browser only when requested and API responses are marked `no-store`.
+
+Notes are protected by the main vault password. They cannot be protected with the separate secondary item-lock feature.
+
+### Notes vault backups
+
+Back up the application configuration directory and the directories containing all registered vaults. A recoverable backup requires the relevant registry and vault data to be consistent with each other. Do not edit encrypted note payloads or manifest files manually.
+
 ## Security model and limitations
 
 My Private Space is intended for local use, but **local-first does not mean security-audited**. Review these limitations before storing sensitive data.
@@ -314,7 +351,7 @@ Important files include:
 |---|---|
 | `config.me` | Encrypted registry used to locate registered vaults and store vault configuration |
 | `state.me` | Persistent failed-login and lockout state |
-| Vault directories | Encrypted manifests and stored content, including password-vault data |
+| Vault directories | Encrypted manifests and stored content, including password entries and notes |
 | Transaction journals and recovery artifacts | May be needed to recover an interrupted operation |
 
 A valid vault can be registered again if the registry is lost, provided the vault directory and correct main password are available.
@@ -352,6 +389,14 @@ After decrypting the registry with the main password, its structure looks like t
       "prefix": "personal-",
       "type": "password",
       "manage_visibility": false
+    },
+    {
+      "id": "vault-abcdef1234567890",
+      "label": "Private Notes",
+      "location": "/Users/example/Vaults/PrivateNotes",
+      "prefix": "notes-",
+      "type": "notes",
+      "manage_visibility": false
     }
   ],
   "last_used_vault": "vault-a1b2c3d4e5f60708"
@@ -364,7 +409,7 @@ After decrypting the registry with the main password, its structure looks like t
 - `label`: Vault name displayed in the application.
 - `location`: Absolute path to the vault directory.
 - `prefix`: Prefix used for newly generated file identifiers. It may be absent for older vaults.
-- `type`: Vault type: `file` for a File Vault or `password` for a Password Vault. Older entries without a type default to `file`.
+- `type`: Vault type: `file` for a File Vault, `password` for a Password Vault, or `notes` for a Notes Vault. Older entries without a type default to `file`.
 - `manage_visibility`: Whether the application manages the folder's native hidden attribute. It may be absent in older registry entries; absence defaults to `false`.
 - `last_used_vault`: Identifier of the last-used vault.
 
@@ -432,7 +477,7 @@ python -m py_compile app/main.py run.py
 node --check app/static/js/app.js
 ```
 
-Automated tests do not replace interactive browser testing or testing on each target operating system. Before using a new build with real data, exercise vault creation for both vault types, registration, conversion, visibility management, drag-and-drop imports, password creation and updates, clipboard operations, password changes, login lockout, inactivity expiration, Deleted Items restoration, and recovery using disposable directories.
+Automated tests do not replace interactive browser testing or testing on each target operating system. Before using a new build with real data, exercise vault creation for all three vault types, registration, conversion, visibility management, drag-and-drop imports, password creation and updates, note creation and updates, clipboard operations, password changes, login lockout, inactivity expiration, Deleted Items restoration, and recovery using disposable directories.
 
 ## Project structure
 

@@ -46,3 +46,14 @@
 @media(max-width:560px){.top-actions{gap:4px}.top-actions .icon-button{width:32px;height:32px;min-width:32px;flex-basis:32px}.top-actions .icon-button svg{width:21px;height:21px}}
 
 .shutdown-screen{min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--text)}.shutdown-card{width:min(100%,460px);padding:36px;text-align:center;background:var(--panel);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow)}.shutdown-mark{width:54px;height:54px;margin:0 auto 16px;border-radius:50%;display:grid;place-items:center;background:#e4f6eb;color:#16804a;font-size:28px;font-weight:700}.shutdown-card p{color:var(--muted);font-size:13px;line-height:1.7}
+
+
+/* Notes Vault */
+.note-preview{align-items:stretch;justify-content:flex-start;text-align:left;padding:clamp(18px,4vw,36px);gap:16px}
+.note-preview h3{margin:0;color:var(--text);font-size:20px}
+.note-content{width:100%;max-width:100%;min-height:180px;margin:0;padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--surface, var(--panel));color:var(--text);font:inherit;font-size:14px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+#noteEntryContent{width:100%;min-height:240px;resize:vertical;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--input-bg,var(--panel));color:var(--text);font:inherit;font-size:14px;line-height:1.6}
+
+.note-font-button{min-width:36px;padding:8px 10px;font-size:18px;line-height:1}
+
+.item-password-dialog .modal-body>p{margin:0 0 5px}.item-password-dialog input{letter-spacing:2px;text-align:center;font-size:17px}.item-password-dialog .primary-button{margin-top:7px}

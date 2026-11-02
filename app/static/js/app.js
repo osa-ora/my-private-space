@@ -2,9 +2,9 @@
   'use strict';
   const token = document.querySelector('meta[name="mps-token"]').content;
   const $ = (id) => document.getElementById(id);
-  const state = { unlocked: false, selectedId: null, selectedEntry: null, importParent: '', treeItems: [], expanded: new Set(), theme: localStorage.getItem('mps-theme') || 'light-navy', previewUrl: null, lastActivity: Date.now(), idleLocked: false, vaultType: 'file' };
+  const state = { unlocked: false, selectedId: null, selectedEntry: null, importParent: '', treeItems: [], expanded: new Set(), theme: localStorage.getItem('mps-theme') || 'light-navy', previewUrl: null, lastActivity: Date.now(), idleLocked: false, vaultType: 'file', noteFontSize: 14 };
   const screens = ['setupScreen', 'unlockScreen', 'workspace'];
-  const dialogs = ['settingsDialog', 'createVaultDialog', 'switchVaultDialog', 'helpDialog', 'trashDialog', 'contextDialog', 'importDialog', 'exportDialog', 'passwordEntryDialog'];
+  const dialogs = ['settingsDialog', 'createVaultDialog', 'switchVaultDialog', 'helpDialog', 'trashDialog', 'contextDialog', 'importDialog', 'exportDialog', 'passwordEntryDialog', 'noteEntryDialog'];
 
   async function api(path, options = {}) {
     const headers = new Headers(options.headers || {});
@@ -69,20 +69,21 @@
       const expanded = state.expanded.has(item.id);
       const chevron = document.createElement('span'); chevron.className = 'tree-chevron'; chevron.textContent = item.type === 'folder' ? (item.locked ? '•' : (hasChildren ? (expanded ? '▾' : '▸') : '')) : '';
       const icon = document.createElement('span'); icon.className = `tree-icon${item.type === 'folder' && !item.locked ? ' folder-tree-icon' : ''}`;
-      if (item.type === 'folder' && !item.locked) { icon.innerHTML = '<svg viewBox="0 0 32 26" aria-hidden="true"><path d="M2.5 5.5A3 3 0 0 1 5.5 2.5h7l3 3h11A3 3 0 0 1 29.5 8.5v12a3 3 0 0 1-3 3h-21a3 3 0 0 1-3-3Z" fill="#e6b957" stroke="#b98527" stroke-width="1.5"/><path d="M2.5 10h27l-2.2 10.5a3 3 0 0 1-2.9 2.3H5.5a3 3 0 0 1-3-3Z" fill="#ffd978" stroke="#b98527" stroke-width="1.2"/></svg>'; } else { icon.textContent = item.locked ? '🔒' : (item.type === 'password' ? '🔑' : '▤'); }
+      if (item.type === 'folder' && !item.locked) { icon.innerHTML = '<svg viewBox="0 0 32 26" aria-hidden="true"><path d="M2.5 5.5A3 3 0 0 1 5.5 2.5h7l3 3h11A3 3 0 0 1 29.5 8.5v12a3 3 0 0 1-3 3h-21a3 3 0 0 1-3-3Z" fill="#e6b957" stroke="#b98527" stroke-width="1.5"/><path d="M2.5 10h27l-2.2 10.5a3 3 0 0 1-2.9 2.3H5.5a3 3 0 0 1-3-3Z" fill="#ffd978" stroke="#b98527" stroke-width="1.2"/></svg>'; } else { icon.textContent = item.locked ? '🔒' : (item.type === 'password' ? '🔑' : (item.type === 'note' ? '📝' : '▤')); }
       const name = document.createElement('span'); name.className = 'tree-name'; name.textContent = item.name;
       row.append(chevron, icon, name);
       if (item.locked) { const lock = document.createElement('span'); lock.className = 'tree-icon'; lock.textContent = '•'; row.append(lock); }
       const more = document.createElement('button'); more.className = 'tree-more'; more.type = 'button'; more.title = 'Item actions'; more.setAttribute('aria-label', `Actions for ${item.name}`); more.textContent = '⋯'; more.addEventListener('click', e => { e.stopPropagation(); openContext(item); }); row.append(more);
       row.addEventListener('click', () => {
         row.focus({ preventScroll: true });
-        if (item.locked) askUnlock(item);
+        if (item.locked) selectTreeItem(item);
         else if (item.type === 'folder') {
           selectFolder(item);
           if (state.expanded.has(item.id)) state.expanded.delete(item.id); else state.expanded.add(item.id);
           renderTreeItemsRoot(item.id);
         } else if (item.type === 'file') selectEntry(item);
         else if (item.type === 'password') selectPassword(item);
+        else if (item.type === 'note') selectNote(item);
       });
       wrapper.append(row); container.append(wrapper);
       if (item.type === 'folder' && expanded && !item.locked && item.children?.length) { const children = document.createElement('div'); children.className = 'tree-children'; wrapper.append(children); renderTreeItems(item.children, children, depth + 1); }
@@ -118,10 +119,11 @@
       $('previewActions').innerHTML = '';
       $('previewContent').className = 'preview-content empty-state';
       $('previewContent').innerHTML = '<div class="empty-icon">🔒</div><h3>Item locked</h3><p>Unlock this item to access its contents.</p>';
-      askUnlock(item);
+      const unlock = document.createElement('button'); unlock.className = 'primary-button'; unlock.type = 'button'; unlock.textContent = 'Unlock'; unlock.addEventListener('click', () => openItemPasswordDialog('unlock', item)); $('previewActions').append(unlock);
     } else if (item.type === 'folder') selectFolder(item);
     else if (item.type === 'file') selectEntry(item);
     else if (item.type === 'password') selectPassword(item);
+        else if (item.type === 'note') selectNote(item);
   }
   async function renderTreeItemsRoot(focusId = state.selectedId) {
     await refreshTree();
@@ -134,7 +136,7 @@
       row.setAttribute('aria-selected', selected ? 'true' : 'false');
     });
   }
-  function resetPreview() { closePreviewUrl(); state.selectedId = null; state.selectedEntry = null; updateTreeSelection(); $('previewTitle').textContent = 'Select a file'; $('previewEyebrow').textContent = 'PREVIEW'; $('previewActions').innerHTML = ''; $('previewContent').className = 'preview-content empty-state'; $('previewContent').innerHTML = '<div class="empty-icon">▧</div><h3>Your private space</h3><p>Select a file in the navigation tree to preview it here.</p>'; }
+  function resetPreview() { closePreviewUrl(); state.selectedId = null; state.selectedEntry = null; updateTreeSelection(); $('previewTitle').textContent = 'Select an item'; $('previewEyebrow').textContent = 'PREVIEW'; $('previewActions').innerHTML = ''; $('previewContent').className = 'preview-content empty-state'; $('previewContent').innerHTML = '<div class="empty-icon">▧</div><h3>Your private space</h3><p>Select an item in the navigation tree to view its contents.</p>'; }
   function selectFolder(item) {
     closePreviewUrl(); state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
     $('previewTitle').textContent = item.name; $('previewEyebrow').textContent = 'FOLDER'; $('previewActions').innerHTML = '';
@@ -198,6 +200,61 @@
       strengthFeedback.textContent = 'Strength could not be assessed.';
     });
   }
+  async function selectNote(item) {
+    closePreviewUrl();
+    state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
+    $('previewTitle').textContent = item.name;
+    $('previewEyebrow').textContent = 'NOTE';
+    $('previewActions').innerHTML = '';
+    let noteText = '';
+    const actions = $('previewActions');
+    const copy = document.createElement('button');
+    copy.className = 'secondary-button'; copy.type = 'button'; copy.textContent = 'Copy';
+    copy.addEventListener('click', async () => {
+      try { await copySecret(noteText); toast('Note copied to clipboard.'); }
+      catch (error) { toast(error.message); }
+    });
+    const decrease = document.createElement('button');
+    decrease.className = 'secondary-button note-font-button'; decrease.type = 'button'; decrease.textContent = '−';
+    decrease.title = 'Decrease note font size'; decrease.setAttribute('aria-label', 'Decrease note font size');
+    const increase = document.createElement('button');
+    increase.className = 'secondary-button note-font-button'; increase.type = 'button'; increase.textContent = '+';
+    increase.title = 'Increase note font size'; increase.setAttribute('aria-label', 'Increase note font size');
+    const edit = document.createElement('button');
+    edit.className = 'secondary-button'; edit.type = 'button'; edit.textContent = 'Edit note';
+    edit.addEventListener('click', () => openNoteEditor(item));
+    const lock = document.createElement('button'); lock.className = 'secondary-button'; lock.type = 'button'; lock.textContent = 'Lock'; lock.addEventListener('click', () => openItemPasswordDialog('lock', item));
+    actions.append(copy, decrease, increase, edit, lock);
+    const content = $('previewContent');
+    content.className = 'preview-content note-preview';
+    content.replaceChildren();
+    const loading = document.createElement('p'); loading.textContent = 'Loading note…'; content.append(loading);
+    try {
+      const result = await api(`/api/notes/${encodeURIComponent(item.id)}`);
+      if (state.selectedId !== item.id) return;
+      content.replaceChildren();
+      const heading = document.createElement('h3'); heading.textContent = result.name;
+      noteText = result.content;
+      const text = document.createElement('pre'); text.className = 'note-content'; text.textContent = noteText;
+      const applyNoteFontSize = () => { text.style.fontSize = `${state.noteFontSize}px`; };
+      decrease.addEventListener('click', () => { state.noteFontSize = Math.max(10, state.noteFontSize - 1); applyNoteFontSize(); });
+      increase.addEventListener('click', () => { state.noteFontSize = Math.min(32, state.noteFontSize + 1); applyNoteFontSize(); });
+      applyNoteFontSize();
+      const metadata = document.createElement('div'); metadata.className = 'password-meta-grid';
+      for (const [label, value] of [['Created', item.created_at], ['Last Updated', item.updated_at]]) {
+        const card = document.createElement('div'); card.className = 'password-meta-card';
+        const caption = document.createElement('span'); caption.textContent = label;
+        const date = document.createElement('strong'); date.textContent = formatEntryTimestamp(value);
+        card.append(caption, date); metadata.append(card);
+      }
+      content.append(heading, text, metadata);
+    } catch (error) {
+      if (state.selectedId !== item.id) return;
+      content.replaceChildren();
+      const message = document.createElement('p'); message.textContent = `Could not load this note: ${error.message}`; content.append(message);
+    }
+  }
+
   function formatEntryTimestamp(value) {
     if (!value) return 'Not available';
     const date = new Date(value);
@@ -215,7 +272,7 @@
   async function selectEntry(item) {
     state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
     $('previewTitle').textContent = item.name; $('previewEyebrow').textContent = 'FILE PREVIEW'; $('previewActions').innerHTML = '';
-    const lockButton = document.createElement('button'); lockButton.className = 'secondary-button'; lockButton.textContent = 'Lock'; lockButton.onclick = () => promptLock(item); $('previewActions').append(lockButton);
+    const lockButton = document.createElement('button'); lockButton.className = 'secondary-button'; lockButton.textContent = 'Lock'; lockButton.onclick = () => openItemPasswordDialog('lock', item); $('previewActions').append(lockButton);
     $('previewContent').className = 'preview-content'; $('previewContent').innerHTML = '<div class="empty-state"><p>Loading preview…</p></div>';
     try {
       closePreviewUrl();
@@ -251,15 +308,20 @@
     $('contextTitle').textContent = item.name;
     const actions = $('contextActions'); actions.innerHTML = '';
     const add = (label, fn, danger = false) => { const button = document.createElement('button'); button.className = `action-item${danger ? ' danger' : ''}`; button.textContent = label; button.onclick = async () => { $('contextDialog').close(); try { await fn(); } catch (e) { toast(e.message); } }; actions.append(button); };
-    if (item.type === 'password') {
+    if (item.locked) {
+      add('Unlock…', () => openItemPasswordDialog('unlock', item));
+    } else if (item.type === 'password') {
       add('Update password…', () => openPasswordEditor(item));
       add('Copy password', async () => { const result = await api(`/api/passwords/${encodeURIComponent(item.id)}/reveal`); await copySecret(result.value); toast('Password copied to clipboard.'); });
       add('Delete (move to Deleted Items)', async () => { if (confirm(`Move “${item.name}” to Deleted Items?`)) { await api(`/api/entries/${encodeURIComponent(item.id)}`, {method:'DELETE'}); if (state.selectedId === item.id) resetPreview(); await refreshTree(); toast('Moved to Deleted Items.'); } }, true);
-    } else if (item.locked) add('Unlock…', () => askUnlock(item));
-    else {
+    } else if (item.type === 'note') {
+      add('Edit note…', () => openNoteEditor(item));
+      add('Lock with secondary password…', () => openItemPasswordDialog('lock', item));
+      add('Delete (move to Deleted Items)', async () => { if (confirm(`Move “${item.name}” to Deleted Items?`)) { await api(`/api/entries/${encodeURIComponent(item.id)}`, {method:'DELETE'}); if (state.selectedId === item.id) resetPreview(); await refreshTree(); toast('Moved to Deleted Items.'); } }, true);
+    } else {
       if (item.type === 'folder') { add('Add files…', () => openImport(item.id, false)); add('Add folder…', () => openImport(item.id, true)); }
       add('Restore copy to computer…', () => openExport(item));
-      add('Lock with secondary password…', () => promptLock(item));
+      add('Lock with secondary password…', () => openItemPasswordDialog('lock', item));
       add('Delete (move to Deleted Items)', async () => { if (confirm(`Move “${item.name}” to Deleted Items?`)) { await api(`/api/entries/${item.id}`, {method:'DELETE'}); if (state.selectedId === item.id) resetPreview(); await refreshTree(); toast('Moved to Deleted Items.'); } }, true);
     }
     $('contextDialog').showModal();
@@ -292,18 +354,64 @@
     finally { button.disabled = false; }
   });
 
-  async function promptLock(item) {
-    const password = prompt(`Choose a secondary password (exactly 8 characters) to lock “${item.name}”.`);
-    if (password === null) return;
-    try { await api(`/api/entries/${item.id}/lock`, {method:'POST', body:JSON.stringify({password})}); await refreshTree(); if (state.selectedId === item.id) resetPreview(); toast('Item locked.'); }
-    catch (e) { toast(e.message); }
+  let itemPasswordAction = null;
+  function openItemPasswordDialog(action, item) {
+    itemPasswordAction = { action, item };
+    const isLock = action === 'lock';
+    $('itemPasswordDialogEyebrow').textContent = isLock ? 'LOCK ITEM' : 'UNLOCK ITEM';
+    $('itemPasswordDialogTitle').textContent = isLock ? `Lock “${item.name}”` : `Unlock “${item.name}”`;
+    $('itemPasswordDialogDescription').textContent = isLock
+      ? 'Choose an 8-character secondary password. You will need it to unlock this item later.'
+      : 'Enter the 8-character secondary password used to lock this item.';
+    $('itemPasswordInput').value = '';
+    $('itemPasswordInput').setAttribute('autocomplete', isLock ? 'new-password' : 'current-password');
+    $('itemPasswordInput').setAttribute('placeholder', '8-character password');
+    $('itemPasswordInput').maxLength = 8;
+    showMessage('itemPasswordMessage', '');
+    $('confirmItemPasswordButton').textContent = isLock ? 'Lock item' : 'Unlock item';
+    $('itemPasswordDialog').showModal();
+    $('itemPasswordInput').focus();
   }
-  async function askUnlock(item) {
-    const password = prompt(`Enter the secondary password to unlock “${item.name}”.`);
-    if (password === null) return;
-    try { const result = await api(`/api/entries/${item.id}/unlock`, {method:'POST', body:JSON.stringify({password})}); await refreshTree(); toast('Item unlocked.'); if (item.type === 'file') { const found = findEntry((await api('/api/tree')).items, item.id); if (found) await selectEntry(found); } }
-    catch (e) { toast(e.message); }
-  }
+  $('confirmItemPasswordButton').addEventListener('click', async () => {
+    if (!itemPasswordAction) return;
+    const { action, item } = itemPasswordAction;
+    const password = $('itemPasswordInput').value;
+    if (password.length !== 8) { showMessage('itemPasswordMessage', 'Enter exactly 8 characters.'); return; }
+    const button = $('confirmItemPasswordButton'); button.disabled = true;
+    try {
+      await api(`/api/entries/${encodeURIComponent(item.id)}/${action}`, { method: 'POST', body: JSON.stringify({ password }) });
+      $('itemPasswordDialog').close();
+      itemPasswordAction = null;
+      $('itemPasswordInput').value = '';
+      await refreshTree();
+      if (action === 'unlock') {
+        const tree = (await api('/api/tree')).items;
+        const found = findEntry(tree, item.id);
+        if (found && state.selectedId === item.id) {
+          if (found.type === 'file') await selectEntry(found);
+          else if (found.type === 'note') await selectNote(found);
+          else selectFolder(found);
+        }
+        toast('Item unlocked.');
+      } else {
+        if (state.selectedId === item.id) resetPreview();
+        toast('Item locked.');
+      }
+    } catch (error) {
+      if (action === 'unlock') {
+        $('itemPasswordDialog').close();
+        toast(error.message);
+      } else showMessage('itemPasswordMessage', error.message);
+    } finally { button.disabled = false; }
+  });
+  $('itemPasswordInput').addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); $('confirmItemPasswordButton').click(); }
+  });
+  $('itemPasswordDialog').addEventListener('close', () => {
+    $('itemPasswordInput').value = '';
+    itemPasswordAction = null;
+    showMessage('itemPasswordMessage', '');
+  });
   let editingPasswordId = null;
   function openPasswordEditor(item = null) {
     editingPasswordId = item?.id || null;
@@ -329,6 +437,45 @@
       if (item) await selectPassword(item);
       toast(editingId ? 'Password updated.' : 'Password added.');
     } catch (e) { showMessage('passwordEntryMessage', e.message); }
+    finally { button.disabled = false; }
+  }
+
+  let editingNoteId = null;
+  async function openNoteEditor(item = null) {
+    editingNoteId = item?.id || null;
+    $('noteEntryDialogTitle').textContent = item ? 'Edit note' : 'Add note';
+    $('saveNoteEntryButton').textContent = item ? 'Save changes' : 'Save note';
+    $('noteEntryName').value = item?.name || '';
+    $('noteEntryContent').value = '';
+    showMessage('noteEntryMessage', item ? 'Loading note…' : '');
+    $('noteEntryDialog').showModal();
+    $('noteEntryName').focus();
+    if (item) {
+      try {
+        const result = await api(`/api/notes/${encodeURIComponent(item.id)}`);
+        if (editingNoteId === item.id && $('noteEntryDialog').open) {
+          $('noteEntryName').value = result.name;
+          $('noteEntryContent').value = result.content;
+          showMessage('noteEntryMessage', '');
+        }
+      } catch (e) { showMessage('noteEntryMessage', e.message); }
+    }
+  }
+  async function saveNoteEntry() {
+    const name = $('noteEntryName').value.trim(), content = $('noteEntryContent').value;
+    if (!name || !content.trim()) { showMessage('noteEntryMessage', 'A note name and text are required.'); return; }
+    const button = $('saveNoteEntryButton'); button.disabled = true;
+    try {
+      const editingId = editingNoteId;
+      const result = await api(editingId ? `/api/notes/${encodeURIComponent(editingId)}` : '/api/notes',
+        {method: editingId ? 'PUT' : 'POST', body: JSON.stringify({name, content})});
+      $('noteEntryDialog').close();
+      $('noteEntryContent').value = '';
+      await refreshTree();
+      const item = findEntry(state.treeItems, result.id || editingId);
+      if (item) await selectNote(item);
+      toast(editingId ? 'Note updated.' : 'Note added.');
+    } catch (e) { showMessage('noteEntryMessage', e.message); }
     finally { button.disabled = false; }
   }
 
@@ -491,7 +638,7 @@
     for (const item of data.items) {
       const row = document.createElement('div'); row.className = 'trash-row';
       const meta = document.createElement('div'); meta.className = 'trash-meta';
-      const name = document.createElement('div'); name.className = 'trash-name'; name.textContent = `${item.type === 'folder' ? '▰' : (item.type === 'password' ? '🔑' : '▤')} ${item.name}`;
+      const name = document.createElement('div'); name.className = 'trash-name'; name.textContent = `${item.type === 'folder' ? '▰' : (item.type === 'password' ? '🔑' : (item.type === 'note' ? '📝' : '▤'))} ${item.name}`;
       const date = document.createElement('div'); date.className = 'trash-date'; date.textContent = item.deleted_at ? new Date(item.deleted_at).toLocaleString() : 'Deleted'; meta.append(name, date);
       const buttons = document.createElement('div'); buttons.className = 'trash-buttons';
       const restore = document.createElement('button'); restore.className = 'secondary-button'; restore.textContent = 'Restore'; restore.onclick = async () => { try { await api(`/api/entries/${item.id}/restore`, {method:'POST',body:JSON.stringify({})}); await showTrash(); await refreshTree(); toast('Item restored.'); } catch(e) { toast(e.message); } };
@@ -525,13 +672,14 @@
 
   function setVaultLabel(label) { $('sidebarVaultLabel').textContent = label || 'Vault locked'; }
   function setVaultType(type) {
-    state.vaultType = type === 'password' ? 'password' : 'file';
+    state.vaultType = ['password', 'notes'].includes(type) ? type : 'file';
     $('importRootButton').classList.toggle('hidden', state.vaultType !== 'file');
     $('addPasswordButton').classList.toggle('hidden', state.vaultType !== 'password');
-    $('tree').setAttribute('aria-label', state.vaultType === 'password' ? 'Saved passwords' : 'Vault files and folders');
+    $('addNoteButton').classList.toggle('hidden', state.vaultType !== 'notes');
+    $('tree').setAttribute('aria-label', state.vaultType === 'password' ? 'Saved passwords' : (state.vaultType === 'notes' ? 'Saved notes' : 'Vault files and folders'));
     $('previewTitle').dataset.vaultType = state.vaultType;
   }
-  function populateVaultPicker(vaults, selectId = 'vaultSelect') { const select = $(selectId); select.innerHTML = ''; for (const vault of vaults) { const option = document.createElement('option'); option.value = vault.id; option.textContent = `${vault.label} · ${vault.type === 'password' ? 'Password vault' : 'File vault'}`; select.append(option); } }
+  function populateVaultPicker(vaults, selectId = 'vaultSelect') { const select = $(selectId); select.innerHTML = ''; for (const vault of vaults) { const option = document.createElement('option'); option.value = vault.id; option.textContent = `${vault.label} · ${vault.type === 'password' ? 'Password vault' : (vault.type === 'notes' ? 'Notes vault' : 'File vault')}`; select.append(option); } }
   async function openSelectedVault() { try { const result = await api('/api/vaults/select', {method:'POST', body:JSON.stringify({vault_id:$('vaultSelect').value})}); state.unlocked = true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Opened ${result.vault_label}.`); } catch(e) { showMessage('unlockMessage', e.message); } }
   function updateVaultManagementButtons(settings) {
     const vaults = Array.isArray(settings?.vaults) ? settings.vaults : [];
@@ -594,9 +742,9 @@
       toast(`Removed ${result.removed_label} from the list.`);
     } catch (e) { showMessage('vaultManagementMessage', e.message); }
   }
-  function syncCreateVaultTypeOptions() { const isPassword = $('createVaultType').value === 'password'; const conversionLabel = $('convertExistingFolder').closest('label'); conversionLabel.classList.toggle('hidden', isPassword); if (isPassword) $('convertExistingFolder').checked = false; }
+  function syncCreateVaultTypeOptions() { const isPassword = ['password', 'notes'].includes($('createVaultType').value); const conversionLabel = $('convertExistingFolder').closest('label'); conversionLabel.classList.toggle('hidden', isPassword); if (isPassword) $('convertExistingFolder').checked = false; }
   function openCreateVault() { $('createVaultType').value='file'; $('createVaultLabel').value=''; $('createVaultDirectory').value=''; $('createVaultPrefix').value=''; $('convertExistingFolder').checked=false; $('createManageVisibility').checked=false; syncCreateVaultTypeOptions(); showMessage('createVaultMessage',''); $('createVaultDialog').showModal(); }
-  async function createVault() { const label=$('createVaultLabel').value.trim(), target_directory=$('createVaultDirectory').value.trim(), prefix=$('createVaultPrefix').value.trim(), convert_existing=$('convertExistingFolder').checked, manage_visibility=$('createManageVisibility').checked, vault_type=$('createVaultType').value; if (!label || !target_directory || !prefix) { showMessage('createVaultMessage','Vault label, destination folder, and storage prefix are required.'); return; } if (convert_existing && !confirm('Convert this ordinary non-empty folder into encrypted vault storage? Files will be encrypted and the originals retained until staging and verification succeed. Continue?')) return; const button=$('confirmCreateVaultButton'); button.disabled=true; try { const result=await api('/api/vaults/create',{method:'POST',body:JSON.stringify({label,target_directory,prefix,convert_existing,manage_visibility,vault_type})}); $('createVaultDialog').close(); localStorage.removeItem('mps-session-locked'); state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Created and opened ${result.vault_label}.`); } catch(e) { showMessage('createVaultMessage',e.message); } finally { button.disabled=false; } }
+  async function createVault() { const label=$('createVaultLabel').value.trim(), target_directory=$('createVaultDirectory').value.trim(), prefix=$('createVaultPrefix').value.trim(), convert_existing=$('convertExistingFolder').checked, manage_visibility=$('createManageVisibility').checked, vault_type=$('createVaultType').value; if (!label || !target_directory || !prefix) { showMessage('createVaultMessage','Vault label, destination folder, and storage prefix are required.'); return; } if (convert_existing && !confirm('Convert this ordinary non-empty folder into encrypted vault storage? Files will be encrypted and the originals retained until staging and verification succeed. Continue?')) return; const button=$('confirmCreateVaultButton'); button.disabled=true; try { const result=await api('/api/vaults/create',{method:'POST',body:JSON.stringify({label,target_directory,prefix,convert_existing,manage_visibility,vault_type})}); $('createVaultDialog').close(); localStorage.removeItem('mps-session-locked'); state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); setVaultType(result.vault_type || vault_type); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Created and opened ${result.vault_label}.`); } catch(e) { showMessage('createVaultMessage',e.message); } finally { button.disabled=false; } }
   async function boot() {
     applyTheme(state.theme);
     try {
@@ -650,6 +798,8 @@
   $('trashButton').addEventListener('click', () => showTrash().catch(e => toast(e.message)));
   $('importRootButton').addEventListener('click', () => openImport(null, null));
   $('addPasswordButton').addEventListener('click', () => openPasswordEditor());
+  $('addNoteButton').addEventListener('click', () => openNoteEditor());
+  $('saveNoteEntryButton').addEventListener('click', saveNoteEntry);
   $('savePasswordEntryButton').addEventListener('click', savePasswordEntry);
   $('createVaultType').addEventListener('change', syncCreateVaultTypeOptions);
   $('startImportButton').addEventListener('click', runImport);

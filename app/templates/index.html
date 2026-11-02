@@ -7,7 +7,7 @@
   <meta name="color-scheme" content="light dark">
   <title>{{ app_name }}</title>
   <link rel="stylesheet" href="/static/css/app.css">
-  <script defer src="/static/js/app.js?v=19"></script>
+  <script defer src="/static/js/app.js?v=22"></script>
 </head>
 <body data-theme="light-navy">
   <header class="topbar">
@@ -31,7 +31,7 @@
         <p class="muted">Choose an existing, empty directory for your encrypted vault and create your main password.</p>
         <form id="setupForm" class="form-stack">
           <label for="setupVaultType">Vault type *</label>
-          <select id="setupVaultType"><option value="file">File vault</option><option value="password">Password vault</option></select>
+          <select id="setupVaultType"><option value="file">File vault</option><option value="password">Password vault</option><option value="notes">Notes vault</option></select>
           <p class="field-hint">File vaults store encrypted files and folders. Password vaults store encrypted password entries.</p>
           <label for="setupVaultLabel">Vault label *</label>
           <input id="setupVaultLabel" required maxlength="80" placeholder="e.g. Personal" autocomplete="off">
@@ -76,6 +76,7 @@
           <button id="trashButton" class="nav-action"><span>▤</span> Deleted Items <span id="trashCount" class="count-pill">0</span></button>
           <button id="importRootButton" class="nav-action"><span>＋</span> Add files or folder</button>
           <button id="addPasswordButton" class="nav-action hidden"><span>＋</span> Add password</button>
+          <button id="addNoteButton" class="nav-action hidden"><span>＋</span> Add note</button>
         </div>
       </aside>
       <section class="preview-panel panel">
@@ -119,13 +120,13 @@
 
   <dialog id="createVaultDialog" class="modal small-modal">
     <form method="dialog" class="modal-head"><div><div class="eyebrow">MULTIPLE VAULTS</div><h2>Create New Vault</h2></div><button class="icon-button" value="cancel" aria-label="Close create vault">×</button></form>
-    <div class="modal-body form-stack"><label for="createVaultType">Vault type *</label><select id="createVaultType"><option value="file">File vault</option><option value="password">Password vault</option></select><p class="muted small">Choose File vault for encrypted files and folders, or Password vault for encrypted password entries.</p><label for="createVaultLabel">Vault label *</label><input id="createVaultLabel" required maxlength="80" placeholder="e.g. Work" autocomplete="off"><label for="createVaultDirectory">Destination folder path *</label><input id="createVaultDirectory" required placeholder="Path to a new or existing vault folder" autocomplete="off"><label for="createVaultPrefix">Storage ID prefix *</label><input id="createVaultPrefix" required maxlength="32" pattern="[A-Za-z0-9_-]+" placeholder="e.g. work-" autocomplete="off"><label class="inline-check"><input id="convertExistingFolder" type="checkbox"> Convert ordinary non-empty folder to encrypted vault storage</label><label class="inline-check"><input id="createManageVisibility" type="checkbox"> Let My Private Space manage this folder's visibility</label><p class="muted small">When enabled, the application hides the folder when registered and makes it visible when unregistered. When disabled, its visibility is left unchanged. This is cosmetic, not a security feature; supported natively on macOS and Windows.</p><p class="muted small">All vaults use the same main password. Empty folders create new vaults; valid existing vaults are verified and registered without changing their contents. Conversion encrypts ordinary files after explicit confirmation and preserves originals until verification succeeds.</p><button id="confirmCreateVaultButton" class="primary-button" type="button">Create and open vault</button><div id="createVaultMessage" class="message" role="status"></div></div>
+    <div class="modal-body form-stack"><label for="createVaultType">Vault type *</label><select id="createVaultType"><option value="file">File vault</option><option value="password">Password vault</option><option value="notes">Notes vault</option></select><p class="muted small">Choose File vault for encrypted files and folders, Password vault for encrypted password entries, or Notes vault for named text notes.</p><label for="createVaultLabel">Vault label *</label><input id="createVaultLabel" required maxlength="80" placeholder="e.g. Work" autocomplete="off"><label for="createVaultDirectory">Destination folder path *</label><input id="createVaultDirectory" required placeholder="Path to a new or existing vault folder" autocomplete="off"><label for="createVaultPrefix">Storage ID prefix *</label><input id="createVaultPrefix" required maxlength="32" pattern="[A-Za-z0-9_-]+" placeholder="e.g. work-" autocomplete="off"><label class="inline-check"><input id="convertExistingFolder" type="checkbox"> Convert ordinary non-empty folder to encrypted vault storage</label><label class="inline-check"><input id="createManageVisibility" type="checkbox"> Let My Private Space manage this folder's visibility</label><p class="muted small">When enabled, the application hides the folder when registered and makes it visible when unregistered. When disabled, its visibility is left unchanged. This is cosmetic, not a security feature; supported natively on macOS and Windows.</p><p class="muted small">All vaults use the same main password. Empty folders create new vaults; valid existing vaults are verified and registered without changing their contents. Conversion encrypts ordinary files after explicit confirmation and preserves originals until verification succeeds.</p><button id="confirmCreateVaultButton" class="primary-button" type="button">Create and open vault</button><div id="createVaultMessage" class="message" role="status"></div></div>
   </dialog>
 
   <dialog id="helpDialog" class="modal">
     <form method="dialog" class="modal-head"><div><div class="eyebrow">MY PRIVATE SPACE</div><h2>Help</h2></div><button class="icon-button" value="cancel" aria-label="Close help">×</button></form>
     <div class="modal-body help-content">
-      <h3>File vaults and password vaults</h3><p>Choose a file vault to import files and folders, including by dragging them onto the navigation tree. Dropping onto a folder imports there; dropping onto a file uses its parent folder. Choose a password vault to store named password entries; their values are masked until Show is selected, and the item menu offers update, copy, and delete.</p>
+      <h3>File, password, and notes vaults</h3><p>Choose a file vault to import files and folders, including by dragging them onto the navigation tree. Dropping onto a folder imports there; dropping onto a file uses its parent folder. Choose a password vault to store named password entries, or a notes vault to store named notes with multiline text. Notes and passwords are encrypted individually and can be edited or moved to Deleted Items.</p>
       <h3>Multiple vaults</h3><p>Create separate vaults for different purposes using the same main password. After authentication, one registered vault opens directly; multiple vaults show a selector. Switch without re-entering the password, or lock the workspace. The current vault label appears in the navigation panel.</p>
       <h3>Recoverable deletion</h3><p>Delete moves items into Deleted Items, including a folder's contents, so you can restore them. Permanent deletion is available from Deleted Items. Removing a vault from the registered list is different: it preserves the encrypted directory and its contents.</p>
       <h3>Item locks</h3><p>Files and folders can have an additional password. A locked folder hides its children until unlocked, and locked file content cannot be previewed. Keep a secure record of these passwords; there is no password recovery service.</p>
@@ -167,6 +168,17 @@
     <div id="contextActions" class="modal-body action-list"></div>
   </dialog>
 
+  <dialog id="itemPasswordDialog" class="modal small-modal item-password-dialog">
+    <form method="dialog" class="modal-head"><div><div id="itemPasswordDialogEyebrow" class="eyebrow">LOCK ITEM</div><h2 id="itemPasswordDialogTitle">Lock item</h2></div><button class="icon-button" value="cancel" aria-label="Close password dialog">×</button></form>
+    <div class="modal-body form-stack">
+      <p id="itemPasswordDialogDescription" class="muted">Choose an 8-character secondary password.</p>
+      <label for="itemPasswordInput">Secondary password</label>
+      <input id="itemPasswordInput" type="password" minlength="8" maxlength="8" autocomplete="current-password" placeholder="8-character password">
+      <button id="confirmItemPasswordButton" class="primary-button" type="button">Continue</button>
+      <div id="itemPasswordMessage" class="message" role="status"></div>
+    </div>
+  </dialog>
+
   <dialog id="passwordEntryDialog" class="modal small-modal">
     <form method="dialog" class="modal-head"><div><div class="eyebrow">PASSWORD VAULT</div><h2 id="passwordEntryDialogTitle">Add password</h2></div><button class="icon-button" value="cancel" aria-label="Close password editor">×</button></form>
     <div class="modal-body form-stack">
@@ -174,6 +186,17 @@
       <label for="passwordEntryValue">Password *</label><input id="passwordEntryValue" type="password" maxlength="10000" required autocomplete="new-password" placeholder="Enter the password value">
       <button id="savePasswordEntryButton" class="primary-button" type="button">Save password</button>
       <div id="passwordEntryMessage" class="message" role="status"></div>
+    </div>
+  </dialog>
+
+  <dialog id="noteEntryDialog" class="modal">
+    <form method="dialog" class="modal-head"><div><div class="eyebrow">NOTES VAULT</div><h2 id="noteEntryDialogTitle">Add note</h2></div><button class="icon-button" value="cancel" aria-label="Close note editor">×</button></form>
+    <div class="modal-body form-stack">
+      <label for="noteEntryName">Note name *</label><input id="noteEntryName" maxlength="200" required autocomplete="off" placeholder="e.g. Project ideas">
+      <label for="noteEntryContent">Note text *</label><textarea id="noteEntryContent" rows="12" maxlength="1000000" required placeholder="Write your note here…"></textarea>
+      <p class="muted small">The note is encrypted before it is written to vault storage.</p>
+      <button id="saveNoteEntryButton" class="primary-button" type="button">Save note</button>
+      <div id="noteEntryMessage" class="message" role="status"></div>
     </div>
   </dialog>
 

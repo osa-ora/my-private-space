@@ -626,3 +626,100 @@ def test_file_vault_root_drop_target_and_header_create_vault_action():
     assert 'function renderRootDropTarget(container)' in script
     assert "classList.contains('tree-root-drop')" in script
     assert "return {id: '', path: 'Root', item: null}" in script
+
+
+
+def test_notes_vault_crud_and_encrypted_storage(monkeypatch, tmp_path):
+    # Isolate the registry so this test does not depend on another vault-flow test.
+    monkeypatch.setattr(main_module, "CONFIG_PATH", tmp_path / "config.me")
+    monkeypatch.setattr(main_module, "STATE_PATH", tmp_path / "state.me")
+    monkeypatch.setattr(main_module, "PASSWORD_CHANGE_JOURNAL", tmp_path / "password-change-journal.json")
+    main_module.STATE.update(root=None, key=None, manifest=None, unlocked=False, vaults=[],
+                             active_vault_id=None, active_vault_label=None, active_vault_type="file",
+                             pending_config=None, last_activity=None)
+    main_module.LOGIN_STATE.update(failed_attempts=0, locked_until=0)
+    main_module._write_login_state(main_module.LOGIN_STATE)
+    vault_root = tmp_path / "notes-vault"
+    vault_root.mkdir()
+
+    setup = client.post("/api/setup", headers=H, json={
+        "label": "Notes", "prefix": "notes-", "target_directory": str(vault_root),
+        "vault_type": "notes", "password": "Abc@1234", "confirm_password": "Abc@1234"
+    })
+    assert setup.status_code == 200, setup.text
+    assert setup.json()["vault_type"] == "notes"
+
+    original_text = "First line\nSecond line\nملاحظة باللغة العربية"
+    created = client.post("/api/notes", headers=H, json={"name": "Project notes", "content": original_text})
+    assert created.status_code == 200, created.text
+    note_id = created.json()["id"]
+    assert note_id.startswith("notes-")
+    physical = vault_root / note_id
+    encrypted_blob = physical.read_bytes()
+    assert original_text.encode("utf-8") not in encrypted_blob
+
+    tree = client.get("/api/tree", headers=H).json()
+    note = tree["items"][0]
+    assert note["type"] == "note" and note["created_at"] and note["updated_at"]
+    read = client.get(f"/api/notes/{note_id}", headers=H)
+    assert read.status_code == 200 and read.json()["content"] == original_text
+    assert read.headers["cache-control"] == "no-store"
+
+    updated_text = "Updated note\nWith multiple lines"
+    updated = client.put(f"/api/notes/{note_id}", headers=H,
+                         json={"name": "Updated project notes", "content": updated_text})
+    assert updated.status_code == 200, updated.text
+    assert client.get(f"/api/notes/{note_id}", headers=H).json() == {
+        "id": note_id, "name": "Updated project notes", "content": updated_text
+    }
+    assert client.post("/api/passwords", headers=H,
+                       json={"name": "Wrong type", "value": "secret"}).status_code == 400
+
+    # Notes support the same secondary item lock as files.
+    locked = client.post(f"/api/entries/{note_id}/lock", headers=H,
+                         json={"password": "Sec@1234"})
+    assert locked.status_code == 200, locked.text
+    assert client.get(f"/api/notes/{note_id}", headers=H).status_code == 423
+    assert client.put(f"/api/notes/{note_id}", headers=H,
+                      json={"name": "Blocked", "content": "Blocked"}).status_code == 423
+    assert client.post(f"/api/entries/{note_id}/unlock", headers=H,
+                       json={"password": "Wrong123"}).status_code == 401
+    assert client.get(f"/api/notes/{note_id}", headers=H).status_code == 423
+    unlocked = client.post(f"/api/entries/{note_id}/unlock", headers=H,
+                           json={"password": "Sec@1234"})
+    assert unlocked.status_code == 200, unlocked.text
+    assert client.get(f"/api/notes/{note_id}", headers=H).json()["content"] == updated_text
+
+    # Notes use the generic recoverable trash.
+    assert client.delete(f"/api/entries/{note_id}", headers=H).status_code == 200
+    assert client.get(f"/api/notes/{note_id}", headers=H).status_code == 404
+    trash = client.get("/api/trash", headers=H).json()["items"]
+    assert any(item["id"] == note_id and item["type"] == "note" for item in trash)
+    assert client.post(f"/api/entries/{note_id}/restore", headers=H,
+                       json={}).status_code == 200
+    assert client.get(f"/api/notes/{note_id}", headers=H).json()["content"] == updated_text
+
+    # Additional Notes Vaults can be created, registered, and switched to.
+    second_root = tmp_path / "second-notes-vault"
+    second_root.mkdir()
+    second = client.post("/api/vaults/create", headers=H, json={
+        "label": "Work Notes", "prefix": "work-notes-", "target_directory": str(second_root),
+        "vault_type": "notes"
+    })
+    assert second.status_code == 200, second.text
+    assert second.json()["vault_type"] == "notes"
+    registry = client.get("/api/settings", headers=H).json()["vaults"]
+    original_vault = next(v for v in registry if v["label"] == "Notes")
+    second_vault = next(v for v in registry if v["label"] == "Work Notes")
+    assert second_vault["type"] == "notes"
+    assert client.post("/api/vaults/select", headers=H,
+                       json={"vault_id": original_vault["id"]}).status_code == 200
+    assert client.get(f"/api/notes/{note_id}", headers=H).json()["content"] == updated_text
+
+    # Changing the shared main password re-encrypts note payloads and manifests.
+    changed = client.post("/api/settings/password", headers=H, json={
+        "current_password": "Abc@1234", "new_password": "Xyz#9876", "confirm_password": "Xyz#9876"
+    })
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["vaults_updated"] == 2
+    assert client.get(f"/api/notes/{note_id}", headers=H).json()["content"] == updated_text

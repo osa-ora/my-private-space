@@ -304,7 +304,7 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(manage_visibility, bool):
             raise ValueError("Invalid vault visibility setting")
         vault_type = v.get("type", "file")
-        if vault_type not in {"file", "password"}:
+        if vault_type not in {"file", "password", "notes"}:
             raise ValueError("Invalid vault type")
         normalized = {"id": vid, "label": label.strip(), "location": str(Path(location).expanduser().resolve()), "type": vault_type, **({"prefix": prefix} if prefix else {})}
         if "manage_visibility" in v:
@@ -402,7 +402,7 @@ def public_tree(manifest: dict[str, Any]) -> dict[str, Any]:
             item = {"id": eid, "name": entry["name"], "type": entry["type"],
                     "locked": bool(entry.get("locked")), "mime": entry.get("mime", "application/octet-stream"),
                     "size": entry.get("size", 0), "children": []}
-            if entry["type"] == "password":
+            if entry["type"] in {"password", "note"}:
                 item["created_at"] = entry["created_at"]
                 item["updated_at"] = entry["updated_at"]
             if entry["type"] == "folder" and not entry.get("locked"):
@@ -410,6 +410,13 @@ def public_tree(manifest: dict[str, Any]) -> dict[str, Any]:
             result.append(item)
         return sorted(result, key=lambda x: (x["type"] != "folder", x["name"].casefold()))
     return {"items": build(None), "trash_count": sum(1 for e in entries.values() if e.get("deleted")), "vault_type": manifest.get("vault_type", "file")}
+
+
+def entry_aad(entry_type: str, entry_id: str) -> bytes:
+    namespace = {"password": "password", "note": "note", "file": "file"}.get(entry_type)
+    if namespace is None:
+        raise ValueError(f"Unsupported encrypted entry type: {entry_type}")
+    return f"mps:{namespace}:{entry_id}:v1".encode()
 
 
 def check_password_key(password: str) -> bytes:
@@ -488,8 +495,8 @@ def setup(payload: SetupRequest):
         prefix = payload.prefix.strip()
         if not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", prefix): raise HTTPException(400, "Prefix may contain only letters, digits, hyphens, and underscores.")
         vault_type = payload.vault_type
-        if vault_type not in {"file", "password"}:
-            raise HTTPException(400, "Choose either a file vault or a password vault.")
+        if vault_type not in {"file", "password", "notes"}:
+            raise HTTPException(400, "Choose a file, password, or notes vault.")
         root = Path(payload.target_directory).expanduser().resolve()
         if not root.exists() or not root.is_dir():
             raise HTTPException(400, "Choose an existing directory for the vault.")
@@ -715,8 +722,8 @@ def create_vault(payload: CreateVaultRequest):
         prefix = payload.prefix.strip()
         if not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", prefix): raise HTTPException(400, "Prefix may contain only letters, digits, hyphens, and underscores.")
         vault_type = payload.vault_type
-        if vault_type not in {"file", "password"}: raise HTTPException(400, "Choose either a file vault or a password vault.")
-        if vault_type == "password" and payload.convert_existing:
+        if vault_type not in {"file", "password", "notes"}: raise HTTPException(400, "Choose a file, password, or notes vault.")
+        if vault_type in {"password", "notes"} and payload.convert_existing:
             raise HTTPException(400, "Ordinary folder conversion is only available for file vaults.")
         config = normalize_config(decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1"))
         if any(v["label"].casefold() == label.casefold() for v in config["vaults"]): raise HTTPException(409, "A vault with this label already exists.")
@@ -752,8 +759,8 @@ def create_vault(payload: CreateVaultRequest):
             # Re-register a previously removed vault without overwriting its encrypted data.
             if not manifest_file.is_file():
                 if not payload.convert_existing:
-                    if vault_type == "password":
-                        raise HTTPException(409, "A new password vault must use an empty directory, or select an existing password-vault directory.")
+                    if vault_type in {"password", "notes"}:
+                        raise HTTPException(409, f"A new {vault_type} vault must use an empty directory, or select an existing matching vault directory.")
                     raise HTTPException(409, "This folder contains ordinary files. Confirm conversion to encrypted vault storage to continue; originals are preserved until verification.")
                 manifest = {"version": 1, "vault_type": "file", "next_id": 1, "created_at": now_iso(), "entries": {}}
                 stage = root.parent / (".mps-convert-" + secrets.token_hex(8))
@@ -822,7 +829,7 @@ def create_vault(payload: CreateVaultRequest):
                         physical = root / eid
                         if not physical.exists() or (entry.get("type") == "folder") != physical.is_dir():
                             raise ValueError("Vault content does not match its manifest")
-                    allowed_entry_types = {"file", "folder"} if vault_type == "file" else {"password"}
+                    allowed_entry_types = {"file", "folder"} if vault_type == "file" else ({"password"} if vault_type == "password" else {"note"})
                     if any(not isinstance(eid, str) or not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", eid) or not isinstance(entry, dict)
                            or entry.get("type") not in allowed_entry_types
                            for eid, entry in entries.items()):
@@ -834,7 +841,7 @@ def create_vault(payload: CreateVaultRequest):
                         else:
                             if not physical.is_file(): raise ValueError("Missing physical file")
                             if not entry.get("locked") and not entry.get("hidden_by"):
-                                aad = f"mps:password:{eid}:v1".encode() if entry.get("type") == "password" else f"mps:file:{eid}:v1".encode()
+                                aad = entry_aad(entry["type"], eid)
                                 decrypt_bytes(key, physical.read_bytes(), aad)
                 except Exception:
                     raise HTTPException(409, "This folder contains data that could not be verified as a vault for the current main password. Nothing was changed.")
@@ -1130,6 +1137,101 @@ def update_password_entry(entry_id: str, payload: PasswordEntryRequest):
         return {"ok": True, "id": entry_id, "name": name}
 
 
+class NoteEntryRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=1000000)
+
+
+def require_notes_vault() -> tuple[Path, bytes, dict[str, Any]]:
+    root, key, manifest = require_unlocked()
+    if manifest.get("vault_type", "file") != "notes":
+        raise HTTPException(400, "Notes are available only in notes vaults.")
+    return root, key, manifest
+
+
+def require_note_entry(entry_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
+    entry = manifest["entries"].get(entry_id)
+    if not entry or entry.get("deleted") or entry.get("type") != "note":
+        raise HTTPException(404, "Note not found.")
+    return entry
+
+
+@app.post("/api/notes")
+def create_note_entry(payload: NoteEntryRequest):
+    with MUTATION_LOCK:
+        root, key, manifest = require_notes_vault()
+        name = payload.name.strip()
+        if not name or not payload.content:
+            raise HTTPException(400, "A note name and text are required.")
+        old_manifest = json.loads(json.dumps(manifest))
+        entry_id = allocate_id(manifest)
+        created_at = now_iso()
+        content = payload.content.encode("utf-8")
+        manifest["entries"][entry_id] = {
+            "name": name, "type": "note", "parent_id": None,
+            "mime": "text/plain; charset=utf-8", "size": len(content),
+            "created_at": created_at, "updated_at": created_at,
+            "deleted": False, "locked": False
+        }
+        path = entry_path(entry_id, manifest, root)
+        try:
+            atomic_write(path, encrypt_bytes(key, content, entry_aad("note", entry_id)))
+            save_manifest()
+        except Exception as exc:
+            STATE["manifest"] = old_manifest
+            path.unlink(missing_ok=True)
+            if isinstance(exc, HTTPException):
+                raise
+            raise HTTPException(500, f"Could not save note: {exc}")
+        return {"ok": True, "id": entry_id, "name": name}
+
+
+@app.get("/api/notes/{entry_id}")
+def read_note_entry(entry_id: str):
+    root, key, manifest = require_notes_vault()
+    entry = require_note_entry(entry_id, manifest)
+    if entry.get("locked") or has_locked_ancestor(manifest, entry):
+        raise HTTPException(423, "This note is locked.")
+    try:
+        content = decrypt_bytes(key, entry_path(entry_id, manifest, root).read_bytes(),
+                                entry_aad("note", entry_id)).decode("utf-8")
+    except Exception:
+        raise HTTPException(500, "This note could not be decrypted; the vault may be damaged.")
+    return JSONResponse(
+        {"id": entry_id, "name": entry["name"], "content": content},
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"}
+    )
+
+
+@app.put("/api/notes/{entry_id}")
+def update_note_entry(entry_id: str, payload: NoteEntryRequest):
+    with MUTATION_LOCK:
+        root, key, manifest = require_notes_vault()
+        entry = require_note_entry(entry_id, manifest)
+        if entry.get("locked") or has_locked_ancestor(manifest, entry):
+            raise HTTPException(423, "This note is locked.")
+        name = payload.name.strip()
+        if not name or not payload.content:
+            raise HTTPException(400, "A note name and text are required.")
+        path = entry_path(entry_id, manifest, root)
+        old_blob = path.read_bytes()
+        old_name, old_size, old_updated = entry["name"], entry.get("size", 0), entry["updated_at"]
+        try:
+            content = payload.content.encode("utf-8")
+            atomic_write(path, encrypt_bytes(key, content, entry_aad("note", entry_id)))
+            entry["name"] = name
+            entry["size"] = len(content)
+            entry["updated_at"] = now_iso()
+            save_manifest()
+        except Exception as exc:
+            atomic_write(path, old_blob)
+            entry["name"], entry["size"], entry["updated_at"] = old_name, old_size, old_updated
+            if isinstance(exc, HTTPException):
+                raise
+            raise HTTPException(500, f"Could not update note: {exc}")
+        return {"ok": True, "id": entry_id, "name": name}
+
+
 class EntryAction(BaseModel):
     password: str | None = None
     destination_parent_id: str | None = None
@@ -1138,10 +1240,10 @@ class EntryAction(BaseModel):
 
 def reencrypt_entry_file(root: Path, old_key: bytes, new_key: bytes, entry_id: str, manifest: dict[str, Any]) -> None:
     entry = manifest["entries"][entry_id]
-    if entry["type"] not in {"file", "password"}:
+    if entry["type"] not in {"file", "password", "note"}:
         return
     path = entry_path(entry_id, manifest, root)
-    aad = f"mps:password:{entry_id}:v1".encode() if entry["type"] == "password" else f"mps:file:{entry_id}:v1".encode()
+    aad = entry_aad(entry["type"], entry_id)
     plain = decrypt_bytes(old_key, path.read_bytes(), aad)
     atomic_write(path, encrypt_bytes(new_key, plain, aad))
 
@@ -1177,12 +1279,13 @@ def lock_entry(entry_id: str, payload: EntryAction):
                 item["mime"] = "application/octet-stream"
                 if eid != entry_id:
                     item["hidden_by"] = entry_id
-                if item["type"] == "file":
+                if item["type"] in {"file", "note"}:
                     path = entry_path(eid, manifest, root)
                     old_blob = path.read_bytes()
                     changed_files.append((path, old_blob))
-                    plain = decrypt_bytes(main_key, old_blob, f"mps:file:{eid}:v1".encode())
-                    atomic_write(path, encrypt_bytes(secondary_key, plain, f"mps:file:{eid}:v1".encode()))
+                    aad = entry_aad(item["type"], eid)
+                    plain = decrypt_bytes(main_key, old_blob, aad)
+                    atomic_write(path, encrypt_bytes(secondary_key, plain, aad))
             entry["locked"] = True
             entry["lock_scope"] = affected
             save_manifest()
@@ -1216,12 +1319,13 @@ def unlock_entry(entry_id: str, payload: EntryAction):
             for eid in affected:
                 item = manifest["entries"][eid]
                 metadata = decrypt_json(secondary_key, unb64(item["locked_meta"]), f"mps:locked-meta:{eid}:v1".encode())
-                if item["type"] == "file":
+                if item["type"] in {"file", "note"}:
                     path = entry_path(eid, manifest, root)
                     old_blob = path.read_bytes()
                     changed_files.append((path, old_blob))
-                    plain = decrypt_bytes(secondary_key, old_blob, f"mps:file:{eid}:v1".encode())
-                    atomic_write(path, encrypt_bytes(main_key, plain, f"mps:file:{eid}:v1".encode()))
+                    aad = entry_aad(item["type"], eid)
+                    plain = decrypt_bytes(secondary_key, old_blob, aad)
+                    atomic_write(path, encrypt_bytes(main_key, plain, aad))
                 item["name"] = metadata["name"]
                 item["mime"] = metadata["mime"]
                 item["size"] = metadata["size"]
@@ -1321,8 +1425,8 @@ def export_entry(entry_id: str, payload: ExportRequest):
         entry = manifest["entries"].get(entry_id)
         if not entry or entry.get("deleted"):
             raise HTTPException(404, "Active vault item not found.")
-        if entry.get("type") == "password":
-            raise HTTPException(400, "Password entries cannot be exported as files.")
+        if entry.get("type") in {"password", "note"}:
+            raise HTTPException(400, "Password and note entries cannot be exported as files.")
         destination = Path(payload.destination_directory).expanduser().resolve()
         if not destination.exists() or not destination.is_dir():
             raise HTTPException(400, "Choose an existing destination directory.")
@@ -1602,7 +1706,8 @@ def change_password(payload: ChangePasswordRequest):
                 staged_item = {"vault":vault,"root":vroot,"stage":stage,"backup":backup,"manifest":vm,"old_manifest":old_manifest_blob}
                 staged.append(staged_item)
                 files_backup: list[tuple[str, bytes]] = []
-                allowed_types = {"file", "folder"} if vm.get("vault_type", "file") == "file" else {"password"}
+                allowed_types = ({"file", "folder"} if vm.get("vault_type", "file") == "file"
+                                  else ({"password"} if vm.get("vault_type") == "password" else {"note"}))
                 for eid, entry in vm["entries"].items():
                     if not isinstance(eid, str) or not __import__("re").fullmatch(r"[A-Za-z0-9_-]+", eid) or not isinstance(entry, dict) or entry.get("type") not in allowed_types:
                         raise ValueError(f"Vault '{vault['label']}' contains invalid entry metadata")
@@ -1613,7 +1718,7 @@ def change_password(payload: ChangePasswordRequest):
                     if not path.is_file(): raise ValueError(f"Vault '{vault['label']}' is missing entry data {eid}")
                     blob = path.read_bytes()
                     if entry.get("locked") or entry.get("hidden_by"): continue
-                    aad = f"mps:password:{eid}:v1".encode() if entry.get("type") == "password" else f"mps:file:{eid}:v1".encode()
+                    aad = entry_aad(entry["type"], eid)
                     plain = decrypt_bytes(old_key, blob, aad)
                     staged_path = entry_path(eid, vm, stage)
                     atomic_write(staged_path, encrypt_bytes(new_key, plain, aad))
@@ -1622,12 +1727,12 @@ def change_password(payload: ChangePasswordRequest):
                 check = decrypt_json(new_key, manifest_path(stage).read_bytes(), b"mps:manifest:v1")
                 if check != vm: raise ValueError(f"Vault '{vault['label']}' staged manifest verification failed")
                 for eid, entry in vm["entries"].items():
-                    if entry.get("type") in {"file", "password"}:
+                    if entry.get("type") in {"file", "password", "note"}:
                         staged_blob = entry_path(eid, vm, stage).read_bytes()
                         if entry.get("locked") or entry.get("hidden_by"):
                             if staged_blob != entry_path(eid, vm, vroot).read_bytes(): raise ValueError("Secondary-locked content changed during staging")
                         else:
-                            aad = f"mps:password:{eid}:v1".encode() if entry.get("type") == "password" else f"mps:file:{eid}:v1".encode()
+                            aad = entry_aad(entry["type"], eid)
                             decrypt_bytes(new_key, staged_blob, aad)
             atomic_write(config_backup, CONFIG_PATH.read_bytes())
             config_backup_created = True
