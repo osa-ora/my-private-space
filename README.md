@@ -358,7 +358,7 @@ Important files include:
 |---|---|
 | `config.me` | Encrypted registry used to locate registered vaults and store vault configuration |
 | `state.me` | Persistent failed-login and lockout state |
-| `password-hint.txt` | Optional user-written password hint, managed from Settings and stored locally so it can be shown before unlocking; it is not encrypted and must not contain the password |
+| `.hint.dat` | Optional password hint stored locally using Base64 encoding under a non-obvious filename; this is encoding/obfuscation, not encryption |
 | Vault directories | Encrypted manifests and stored content, including password entries and notes |
 | Transaction journals and recovery artifacts | May be needed to recover an interrupted operation |
 

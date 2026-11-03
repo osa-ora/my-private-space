@@ -49,7 +49,8 @@ APP_HOME = Path(os.environ.get("MPS_HOME", Path.home() / ".my-private-space")).e
 CONFIG_PATH = APP_HOME / "config.me"
 STATE_PATH = APP_HOME / "state.me"
 STATE_OBFUSCATION = b"mps-state-obfuscation-v1"
-PASSWORD_HINT_PATH = APP_HOME / "password-hint.txt"
+PASSWORD_HINT_PATH = APP_HOME / ".hint.dat"
+LEGACY_PASSWORD_HINT_PATH = APP_HOME / "password-hint.txt"
 VAULT_ARCHIVE_MAGIC = b"MPSVAULT1"
 LOCKOUT_SECONDS = 300
 IDLE_TIMEOUT_SECONDS = 300
@@ -551,13 +552,51 @@ class PasswordHintRequest(BaseModel):
     hint: str = Field(default="", max_length=300)
 
 
+def _read_password_hint() -> str:
+    """Read the locally stored Base64-encoded hint."""
+    if not PASSWORD_HINT_PATH.exists():
+        return ""
+    try:
+        encoded = PASSWORD_HINT_PATH.read_bytes()
+        return base64.b64decode(encoded, validate=True).decode("utf-8")
+    except Exception as exc:
+        raise RuntimeError("The saved password hint file is invalid or unreadable.") from exc
+
+
+def _write_password_hint(hint: str) -> None:
+    """Store the hint under a non-obvious filename with Base64 encoding."""
+    if hint:
+        encoded = base64.b64encode(hint.encode("utf-8"))
+        atomic_write(PASSWORD_HINT_PATH, encoded)
+        try:
+            os.chmod(PASSWORD_HINT_PATH, 0o600)
+        except OSError:
+            pass
+    else:
+        PASSWORD_HINT_PATH.unlink(missing_ok=True)
+
+
+@app.on_event("startup")
+def migrate_legacy_password_hint():
+    """Rename and encode the old plaintext hint file on startup."""
+    if not LEGACY_PASSWORD_HINT_PATH.exists():
+        return
+    try:
+        if not PASSWORD_HINT_PATH.exists():
+            legacy_hint = LEGACY_PASSWORD_HINT_PATH.read_text("utf-8")
+            _write_password_hint(legacy_hint)
+        LEGACY_PASSWORD_HINT_PATH.unlink(missing_ok=True)
+    except Exception as exc:
+        print(f"WARNING: Could not migrate legacy password hint: {exc}", file=sys.stderr)
+
+
 @app.get("/api/settings/password-hint")
 def read_password_hint_setting():
     require_unlocked()
     try:
-        hint = PASSWORD_HINT_PATH.read_text("utf-8") if PASSWORD_HINT_PATH.exists() else ""
-    except OSError:
-        hint = ""
+        hint = _read_password_hint()
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
     return {"hint": hint}
 
 
@@ -565,12 +604,10 @@ def read_password_hint_setting():
 def update_password_hint_setting(payload: PasswordHintRequest):
     require_unlocked()
     hint = payload.hint.strip()
-    if hint:
-        atomic_write(PASSWORD_HINT_PATH, hint.encode("utf-8"))
-        try: os.chmod(PASSWORD_HINT_PATH, 0o600)
-        except OSError: pass
-    else:
-        PASSWORD_HINT_PATH.unlink(missing_ok=True)
+    try:
+        _write_password_hint(hint)
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
     return {"ok": True, "hint": hint}
 
 
@@ -579,9 +616,9 @@ def get_password_hint():
     if not CONFIG_PATH.exists():
         raise HTTPException(404, "No vault is configured.")
     try:
-        hint = PASSWORD_HINT_PATH.read_text("utf-8") if PASSWORD_HINT_PATH.exists() else ""
-    except OSError:
-        hint = ""
+        hint = _read_password_hint()
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
     return JSONResponse({"hint": hint}, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
 
 
