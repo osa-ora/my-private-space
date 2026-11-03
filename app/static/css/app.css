@@ -57,3 +57,368 @@
 .note-font-button{min-width:36px;padding:8px 10px;font-size:18px;line-height:1}
 
 .item-password-dialog .modal-body>p{margin:0 0 5px}.item-password-dialog input{letter-spacing:2px;text-align:center;font-size:17px}.item-password-dialog .primary-button{margin-top:7px}
+
+/* Professional, high-visibility interface refresh */
+:root{font-size:16px}
+.topbar{height:82px;padding:0 32px}
+.brand{font-size:22px;gap:14px;font-weight:750;letter-spacing:-.35px}
+.brand-mark{width:52px;height:52px;flex-basis:52px}
+.top-actions{gap:12px}
+.top-actions .icon-button{width:52px;height:52px;min-width:52px;flex-basis:52px;border-radius:14px;font-size:25px}
+.top-actions .icon-button svg{width:31px;height:31px}
+#settingsButton svg{width:33px;height:33px}
+.gate-screen{min-height:calc(100vh - 82px);padding:42px}
+.gate-card{width:min(100%,600px);padding:46px;border-radius:24px}
+.compact-card{width:min(100%,520px)}
+.vault-emblem{width:96px;height:96px;margin-bottom:22px}
+h1{font-size:34px;line-height:1.2;letter-spacing:-1px;margin:13px 0 12px}
+h2{font-size:25px;line-height:1.25;letter-spacing:-.5px}
+h3{font-size:19px}
+.eyebrow{font-size:12px;letter-spacing:1.8px}
+.muted{font-size:16px;line-height:1.65}
+.small{font-size:14px}
+.form-stack{gap:14px}
+.form-stack label{font-size:15px;margin-top:7px}
+.form-stack input,.form-stack select{padding:15px 16px;font-size:16px;border-radius:11px;min-height:52px}
+.form-stack textarea{font-size:16px!important}
+.field-hint{font-size:14px;line-height:1.55}
+.password-rules{font-size:14px;line-height:1.8}
+.primary-button,.secondary-button,.subtle-button{font-size:16px;padding:13px 18px;border-radius:11px;min-height:48px}
+.primary-button{padding:15px 20px;font-weight:750}
+.workspace{height:calc(100vh - 82px);padding:22px;gap:20px;grid-template-columns:minmax(340px,390px) minmax(0,1fr)}
+.panel{border-radius:18px}
+.panel-heading{height:68px;padding:0 20px;font-size:14px;letter-spacing:1.1px}
+.panel-heading #sidebarVaultLabel{max-width:75%}
+.tree{padding:14px 12px}
+.tree-row{min-height:54px;padding:8px 10px;gap:11px;border-radius:11px;font-size:16px;font-weight:600}
+.tree-chevron{width:20px;min-width:20px;font-size:17px}
+.tree-icon{width:42px;min-width:42px;height:40px;font-size:29px}
+.tree-icon svg{width:39px;height:33px}
+.tree-icon:not(.folder-tree-icon){font-size:29px}
+.tree-more{min-width:36px;height:36px;font-size:25px;border-radius:9px}
+.tree-children{padding-left:24px}
+.tree-row.selected{font-weight:750;box-shadow:inset 3px 0 #4b8fe2}
+.sidebar-bottom{padding:14px;gap:8px}
+.nav-action{gap:13px;padding:14px 13px;border-radius:11px;font-size:16px;font-weight:650;min-height:52px}
+.nav-action>span:first-child{font-size:25px;min-width:30px;text-align:center}
+.count-pill{font-size:13px;padding:4px 10px}
+.preview-toolbar{padding:22px 26px;min-height:96px;gap:18px}
+.preview-toolbar h2{font-size:26px}
+.preview-actions{gap:10px}
+.preview-content{padding:30px}
+.empty-state h3{font-size:22px;margin:16px 0 6px}
+.empty-state p{font-size:16px;max-width:460px;line-height:1.65}
+.empty-icon{font-size:58px}
+.preview-text{font-size:16px;line-height:1.8}
+.modal{width:min(94vw,680px);max-height:90vh;border-radius:20px}
+.small-modal{width:min(92vw,500px)}
+.modal-head{padding:24px 28px}
+.modal-head .icon-button{width:44px;height:44px;min-width:44px;font-size:28px}
+.modal-body{padding:28px;max-height:calc(90vh - 92px)}
+.help-content h3{font-size:19px;margin-bottom:8px}
+.help-content p{font-size:15px;line-height:1.7;margin-bottom:22px}
+.action-list{gap:8px}
+.action-item{padding:15px 16px;font-size:16px;min-height:54px}
+.trash-row{gap:14px;padding:16px 0}
+.trash-name{font-size:16px}
+.trash-date{font-size:13px}
+.trash-buttons button{font-size:14px;padding:10px 13px}
+.toast{font-size:15px;padding:14px 20px;border-radius:12px}
+.about-emblem{width:82px;height:82px}
+.about-content h3{font-size:20px}
+.about-content p{font-size:16px}
+.about-version{font-size:14px}
+.drop-zone{min-height:140px;padding:24px;gap:10px}
+.drop-zone strong{font-size:18px}
+.drop-zone span{font-size:15px}
+.password-value{font-size:20px;padding:18px}
+.password-meta-card{padding:15px 17px;border-radius:12px;gap:8px}
+.password-meta-card span{font-size:14px}
+.password-meta-card strong{font-size:15px}
+.password-strength{padding:18px;border-radius:13px}
+.password-strength-header{font-size:15px}
+.password-strength-feedback{font-size:14px}
+.note-preview{padding:clamp(24px,4vw,46px);gap:20px}
+.note-preview h3{font-size:25px}
+.note-content{font-size:17px;line-height:1.8;padding:24px;border-radius:15px}
+#noteEntryContent{font-size:17px!important;line-height:1.7;padding:16px}
+.note-font-button{min-width:48px;font-size:23px}
+.item-password-dialog input{font-size:20px}
+
+/* Consistent icon + label action controls */
+.secondary-button,.primary-button,.viewer-icon-button,.action-item{display:inline-flex;align-items:center;justify-content:center;gap:10px}
+.secondary-button svg,.primary-button svg,.action-item svg,.viewer-icon-button svg{width:21px;height:21px;flex:0 0 auto}
+.action-item{justify-content:flex-start;width:100%}
+.action-item svg{width:23px;height:23px}
+.preview-actions .secondary-button,.preview-actions .primary-button{min-height:48px}
+
+/* Image and PDF viewer controls */
+.media-viewer-toolbar,.pdf-toolbar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding:13px 16px;margin:0 0 18px;border:1px solid var(--border);border-radius:14px;background:var(--panel);box-shadow:0 4px 16px rgba(20,40,75,.06)}
+.viewer-icon-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:9px 14px;border:1px solid var(--border);border-radius:10px;background:var(--panel);color:var(--text);font:inherit;font-size:15px;font-weight:700;cursor:pointer}
+.viewer-icon-button:hover{background:var(--hover);border-color:#9bb7dc}
+.viewer-icon-button svg{width:21px;height:21px}
+.viewer-zoom-label{min-width:58px;text-align:center;font-size:15px;font-weight:750;font-variant-numeric:tabular-nums}
+.image-viewer-stage{width:100%;min-height:300px;height:calc(100% - 72px);overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:22px;background:color-mix(in srgb,var(--bg) 75%,var(--panel));border:1px solid var(--border);border-radius:14px}
+.preview-image{max-width:none;max-height:none;width:auto;height:auto;object-fit:contain;transform-origin:top center;transition:transform .12s ease;box-shadow:0 10px 28px rgba(20,40,75,.15);border-radius:3px}
+.pdf-viewer{display:flex;flex-direction:column;height:100%;min-height:600px;gap:10px}
+.pdf-toolbar{justify-content:space-between;margin:0;gap:14px;padding:12px 14px;flex:0 0 auto}
+.pdf-control-group{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.pdf-control-label,.pdf-page-total{font-size:14px;font-weight:700;color:var(--muted)}
+.pdf-page-input{width:70px;height:42px;padding:7px 9px;border:1px solid var(--border);border-radius:9px;background:var(--panel);color:var(--text);font:inherit;font-size:16px;font-weight:700;text-align:center}
+.pdf-frame{flex:1;min-height:560px;height:calc(100vh - 250px);border:1px solid var(--border);border-radius:12px;box-shadow:0 5px 20px rgba(20,40,75,.08)}
+
+@media(max-width:900px){.workspace{grid-template-columns:minmax(270px,34%) minmax(0,1fr);padding:14px;gap:14px}.tree-row{font-size:15px}.pdf-toolbar{justify-content:center}}
+@media(max-width:760px){.topbar{height:auto;min-height:76px;padding:10px 14px}.brand{font-size:17px}.brand-mark{width:40px;height:40px;flex-basis:40px}.top-actions{gap:5px;flex-wrap:wrap;justify-content:flex-end}.top-actions .icon-button{width:40px;height:40px;min-width:40px;flex-basis:40px}.top-actions .icon-button svg{width:24px;height:24px}.workspace{height:auto;min-height:calc(100vh - 76px);grid-template-columns:1fr;padding:12px;gap:12px}.sidebar{min-height:320px;max-height:48vh}.preview-panel{min-height:55vh}.gate-card{padding:28px}.gate-screen{padding:18px}.tree-row{min-height:50px}.preview-toolbar{align-items:flex-start;flex-direction:column}.preview-actions{justify-content:flex-start}.pdf-viewer{min-height:480px}.pdf-frame{min-height:420px;height:65vh}}
+@media(max-width:480px){.brand{font-size:15px}.top-actions .icon-button{width:36px;height:36px;min-width:36px;flex-basis:36px}.workspace{padding:8px}.tree-row{font-size:14px;gap:7px}.tree-children{padding-left:12px}.pdf-control-group{justify-content:center}.viewer-icon-button{font-size:13px;padding:8px 10px}}
+.tree-lock-badge{margin-left:auto;padding:4px 8px;border-radius:999px;background:#fff2d8;color:#8a5b12;font-size:10px;font-weight:850;letter-spacing:.6px;white-space:nowrap}
+.tree-icon svg{width:36px;height:36px;overflow:visible}
+.nav-action-icon{display:inline-flex;align-items:center;justify-content:center;width:34px;min-width:34px;height:34px;border-radius:10px;background:var(--soft);color:#4774ad}
+.nav-action-icon svg,.refresh-button svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.refresh-button{display:grid;place-items:center;width:44px;height:44px;padding:8px}
+.refresh-button svg{width:27px;height:27px}
+.image-viewer-stage .preview-image{max-width:100%;max-height:calc(100vh - 290px)}
+
+/* Readability and visual-system correction: intentionally larger, consistent controls. */
+:root{font-size:18px}
+body{font-size:18px;line-height:1.55}
+.topbar{height:82px;padding:0 34px}
+.brand{font-size:24px;gap:14px}
+.brand-mark{width:52px;height:52px;flex-basis:52px}
+.top-actions{gap:12px}
+.top-actions .icon-button{width:52px;height:52px;min-width:52px;border-radius:14px}
+.top-actions .icon-button svg{width:29px;height:29px}
+.gate-screen{min-height:calc(100vh - 82px);padding:36px}
+.gate-card{width:min(100%,620px);padding:46px;border-radius:22px}
+.compact-card{width:min(100%,540px)}
+.vault-emblem{width:96px;height:96px}
+h1{font-size:36px;letter-spacing:-.7px}
+h2{font-size:27px;letter-spacing:-.3px}
+h3{font-size:21px}
+.eyebrow{font-size:14px;letter-spacing:1.7px}
+.muted{font-size:18px;line-height:1.65}
+.small,.field-hint,.password-rules{font-size:15px;line-height:1.65}
+.form-stack{gap:15px}
+.form-stack label{font-size:17px;margin-top:7px}
+.form-stack input,.form-stack select,.form-stack textarea{font-size:18px!important;padding:15px 16px;min-height:54px;border-radius:11px}
+.form-stack textarea{min-height:220px}
+.primary-button,.secondary-button,.subtle-button{font-size:17px;padding:14px 19px;min-height:52px;border-radius:11px}
+.workspace{height:calc(100vh - 82px);min-height:560px;padding:22px;grid-template-columns:minmax(340px,410px) minmax(0,1fr);gap:20px}
+.panel{border-radius:17px}
+.panel-heading{height:68px;padding:0 20px;font-size:16px;letter-spacing:1px}
+.tree{padding:13px 11px}
+.tree-row{min-height:58px;padding:8px 10px;gap:11px;font-size:18px;border-radius:11px}
+.tree-name{font-size:18px;line-height:1.35}
+.tree-chevron{width:21px;min-width:21px;font-size:17px}
+.tree-icon{width:46px;min-width:46px;height:42px}
+.tree-icon svg{width:40px!important;height:40px!important}
+.tree-more{width:38px;height:38px;font-size:25px}
+.tree-lock-badge{font-size:13px;padding:5px 10px}
+.tree-children{padding-left:22px}
+.sidebar-bottom{padding:14px;gap:7px}
+.nav-action{font-size:17px;gap:13px;padding:13px 12px;min-height:58px;border-radius:11px}
+.nav-action-icon{width:44px;min-width:44px;height:44px;border-radius:12px}
+.nav-action-icon svg,.refresh-button svg{width:30px;height:30px}
+.count-pill{font-size:14px;padding:4px 10px}
+.refresh-button{width:50px;height:50px}
+.preview-toolbar{padding:21px 26px;min-height:96px;gap:18px}
+.preview-toolbar h2{font-size:27px}
+.preview-actions{gap:10px;align-items:center}
+.preview-actions .secondary-button,.preview-actions .primary-button{min-height:54px;padding:13px 17px;font-size:17px}
+.preview-actions svg,.secondary-button svg,.primary-button svg,.viewer-icon-button svg,.action-item svg{width:25px;height:25px;flex:0 0 25px}
+.preview-content{padding:30px}
+.empty-state h3{font-size:24px}
+.empty-state p{font-size:18px;max-width:480px}
+.empty-icon{font-size:58px}
+.preview-text{font-size:17px;line-height:1.8}
+.modal{width:min(94vw,700px);border-radius:20px}
+.small-modal{width:min(94vw,540px)}
+.modal-head{padding:24px 28px}
+.modal-body{padding:28px;max-height:calc(88vh - 100px)}
+.modal-head h2{font-size:26px}
+.modal-head .icon-button{width:46px;height:46px;font-size:27px}
+.action-list{gap:8px}
+.action-item{font-size:17px;padding:15px 16px;min-height:56px;border-radius:11px}
+.action-item svg{width:27px;height:27px}
+.help-content h3{font-size:20px;margin-bottom:8px}
+.help-content p{font-size:17px;line-height:1.7;margin-bottom:20px}
+.trash-row{gap:14px;padding:15px 0}
+.trash-name{font-size:17px}
+.trash-date{font-size:14px}
+.trash-buttons button{font-size:15px;padding:10px 13px}
+.toast{font-size:16px;padding:14px 20px;border-radius:12px}
+.icon-button{width:48px;height:48px}
+.icon-button svg{width:27px;height:27px}
+.note-preview{padding:clamp(28px,4vw,54px);gap:24px}
+.note-preview h3{font-size:29px}
+.note-content{font-size:20px;line-height:1.9;padding:30px}
+.note-font-button{min-width:unset;font-size:16px;gap:10px}
+.image-viewer-stage{min-height:380px;height:calc(100% - 80px);padding:28px;border-radius:16px}
+.image-zoom-action{min-width:124px}
+.image-zoom-status{display:inline-flex;align-items:center;justify-content:center;min-width:76px;padding:10px 12px;border:1px solid var(--border);border-radius:11px;background:var(--soft);font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+.pdf-viewer{min-height:680px;gap:14px}
+.pdf-toolbar{padding:16px 18px;gap:16px;border-radius:15px}
+.pdf-control-group{gap:12px}
+.pdf-control-label,.pdf-page-total{font-size:17px}
+.pdf-page-input{width:82px;height:50px;font-size:18px}
+.viewer-icon-button{min-height:52px;padding:12px 17px;font-size:16px;border-radius:11px;gap:10px}
+.viewer-icon-button svg{width:25px;height:25px}
+.viewer-zoom-label{font-size:17px;min-width:70px}
+.pdf-frame{min-height:600px;height:calc(100vh - 290px)}
+.item-password-dialog input{font-size:20px!important}
+@media(max-width:1000px){.workspace{grid-template-columns:minmax(290px,38%) minmax(0,1fr);padding:14px;gap:14px}.tree-row,.tree-name{font-size:16px}.nav-action{font-size:15px}}
+@media(max-width:760px){.topbar{height:auto;min-height:78px;padding:12px 16px}.brand{font-size:19px}.brand-mark{width:44px;height:44px;flex-basis:44px}.top-actions .icon-button{width:44px;height:44px;min-width:44px;flex-basis:44px}.workspace{height:auto;min-height:calc(100vh - 78px);grid-template-columns:1fr;padding:12px;gap:12px}.sidebar{min-height:340px;max-height:55vh}.preview-panel{min-height:58vh}.gate-card{padding:28px}.gate-screen{min-height:calc(100vh - 78px);padding:16px}.preview-toolbar{align-items:flex-start;flex-direction:column}.preview-actions{justify-content:flex-start}.tree-row{min-height:54px}.pdf-viewer{min-height:500px}.pdf-frame{min-height:440px;height:65vh}}
+@media(max-width:480px){:root{font-size:16px}.brand{font-size:16px}.top-actions{gap:4px}.top-actions .icon-button{width:38px;height:38px;min-width:38px;flex-basis:38px}.top-actions .icon-button svg{width:23px;height:23px}.workspace{padding:8px}.tree-row,.tree-name{font-size:15px}.tree-icon{width:38px;min-width:38px}.tree-children{padding-left:12px}.pdf-control-group{justify-content:center}.viewer-icon-button{font-size:14px;padding:9px 11px}}
+
+/* Final readability pass: deliberately larger typography and consistent controls. */
+:root{font-size:18px}
+body{font-size:18px;line-height:1.5}
+.brand{font-size:21px}
+.topbar{min-height:78px}
+.top-actions{gap:12px}
+.top-actions .icon-button{width:50px;height:50px;min-width:50px}
+.top-actions .icon-button svg{width:29px;height:29px}
+h1{font-size:32px;line-height:1.2}
+h2{font-size:27px;line-height:1.25}
+h3{font-size:21px;line-height:1.3}
+.eyebrow{font-size:13px;letter-spacing:1.6px}
+.muted,.small,.field-hint,.password-rules,.message{font-size:16px;line-height:1.65}
+.form-stack{gap:14px}
+.form-stack label{font-size:17px}
+.form-stack input,.form-stack select{font-size:17px;min-height:50px;padding:12px 14px}
+.primary-button,.secondary-button,.subtle-button{font-size:17px;min-height:48px;padding:11px 16px}
+.gate-card{padding:40px}
+.panel-heading{font-size:14px;letter-spacing:1.3px;min-height:60px}
+.tree-row,.tree-name{font-size:18px;line-height:1.4}
+.tree-row{min-height:54px;padding:7px 8px;gap:10px}
+.tree-chevron{font-size:17px;width:20px;min-width:20px}
+.tree-icon{width:46px;min-width:46px;height:44px}
+.tree-icon svg{width:34px;height:34px}
+.tree-more{width:40px;height:40px;font-size:26px}
+.tree-lock-badge{font-size:13px;font-weight:800}
+.nav-action{font-size:18px;min-height:60px}
+.count-pill{font-size:15px}
+.preview-toolbar h2{font-size:28px}
+.preview-actions .primary-button,.preview-actions .secondary-button{font-size:17px;min-height:54px}
+.preview-content{font-size:18px}
+.preview-text{font-size:18px;line-height:1.8}
+.modal-head h2{font-size:27px}
+.modal-body{font-size:17px;line-height:1.65}
+.modal-body label{font-size:17px}
+.action-item{font-size:18px;min-height:58px}
+.help-content h3{font-size:21px}
+.help-content p,.about-content p{font-size:17px;line-height:1.75}
+.trash-name{font-size:18px}
+.trash-date{font-size:15px}
+.toast{font-size:16px}
+.note-preview h3{font-size:29px}
+.note-content{font-size:21px;line-height:1.9}
+.note-font-button{font-size:17px;min-height:50px}
+.image-zoom-action{min-width:132px;min-height:54px;font-size:17px}
+.image-zoom-status{font-size:17px;min-height:48px}
+.secondary-button svg,.primary-button svg,.action-item svg,.preview-actions svg{width:27px;height:27px;flex:0 0 27px}
+.icon-button svg{width:28px;height:28px}
+.pdf-viewer{display:flex;flex:1;min-height:0;height:100%;width:100%;overflow:hidden;border:1px solid var(--border);border-radius:14px;background:#fff}
+.pdf-frame{display:block;width:100%;height:100%;min-height:680px;flex:1;border:0;background:#fff}
+.preview-content:has(.pdf-viewer){padding:14px;overflow:hidden;display:flex;flex-direction:column}
+@media(max-width:1000px){.tree-row,.tree-name{font-size:17px}.nav-action{font-size:17px}}
+@media(max-width:760px){:root{font-size:17px}.brand{font-size:19px}.top-actions .icon-button{width:46px;height:46px;min-width:46px}.workspace{height:auto;min-height:calc(100vh - 78px)}.tree-row,.tree-name{font-size:17px}.pdf-frame{min-height:620px;height:78vh}.preview-content:has(.pdf-viewer){min-height:680px}}
+@media(max-width:480px){:root{font-size:16px}.top-actions .icon-button{width:42px;height:42px;min-width:42px}.tree-row,.tree-name{font-size:16px}.form-stack input,.form-stack select{font-size:16px}}
+
+/* Vault search and transfer controls */
+.vault-search{position:relative;padding:12px 14px 10px;border-bottom:1px solid var(--border,#dce3ee);display:grid;gap:8px;z-index:3}
+.search-input-wrap{display:flex;align-items:center;gap:9px;border:1px solid var(--border,#cbd5e1);border-radius:10px;background:var(--surface,#fff);padding:0 11px;min-height:42px}
+.search-input-wrap svg{width:18px;height:18px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.search-input-wrap input{width:100%;min-width:0;border:0!important;outline:0!important;background:transparent!important;padding:8px 0!important;font:inherit;color:inherit;box-shadow:none!important}
+.vault-search>select{min-height:36px;padding:6px 9px;font-size:14px}
+.vault-search-results{position:absolute;top:calc(100% - 1px);left:12px;right:12px;max-height:320px;overflow:auto;background:var(--surface,#fff);border:1px solid var(--border,#cbd5e1);border-radius:10px;box-shadow:0 12px 28px #172b4d24;padding:5px;z-index:20}
+.search-result{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;text-align:left;padding:10px;border:0;border-radius:7px;background:transparent;color:inherit;cursor:pointer;font:inherit}
+.search-result:hover,.search-result:focus-visible{background:var(--hover,#edf3fb);outline:0}
+.search-result strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}
+.search-result span,.search-empty{font-size:13px;color:var(--muted,#64748b);flex:0 0 auto}
+.search-empty{padding:12px;text-align:center}
+.warning-text{padding:12px;border:1px solid #d69a38;border-radius:9px;background:#fff7e6;color:#754b0b;font-size:14px;line-height:1.5}
+[data-theme="dark"] .warning-text{background:#382a12;color:#f5d89a;border-color:#8e6724}
+#forgotPasswordButton{justify-self:center;text-decoration:underline;text-underline-offset:3px}
+#passwordHintMessage{overflow-wrap:anywhere}
+
+/* Search controls: keep input and result text readable in both themes. */
+.search-input-wrap{background:#f8fafc;border-color:#8da3bf;color:#172b4d}
+.search-input-wrap input{color:#172b4d!important;-webkit-text-fill-color:#172b4d!important;caret-color:#172b4d}
+.search-input-wrap input::placeholder{color:#64748b!important;opacity:1}
+.search-input-wrap:focus-within{border-color:#3978c6;box-shadow:0 0 0 3px #3978c626}
+.vault-search-results{background:var(--surface,#fff);color:var(--text,#172b4d)}
+.search-result{color:var(--text,#172b4d)}
+.search-result strong{color:var(--text,#172b4d)}
+.search-result span,.search-empty{color:var(--muted,#64748b)}
+.search-scope{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:2px 1px;color:var(--text,#172b4d);font-size:13px}
+.search-scope label{display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+.search-scope input[type="radio"]{width:16px;height:16px;margin:0;accent-color:#3978c6}
+.search-highlight{background:#ffe58a;color:#382600;border-radius:3px;padding:0 2px;font-weight:700}
+/* Make checkboxes visually proportional to their labels throughout the app. */
+input[type="checkbox"]{width:18px!important;height:18px!important;min-width:18px;min-height:18px;margin:1px 0 0!important;flex:0 0 18px;accent-color:#3978c6;vertical-align:middle}
+.inline-check,.form-stack label:has(input[type="checkbox"]),#exportDialog label:has(input[type="checkbox"]){display:flex;align-items:center;gap:10px;line-height:1.45}
+.form-stack input[type="checkbox"]{width:18px!important;height:18px!important;flex:0 0 18px}
+
+/* Search dropdown is deliberately high-contrast in both light and dark themes. */
+.vault-search-results,
+body[data-theme="dark"] .vault-search-results {
+  background: #ffffff !important;
+  color: #172033 !important;
+  border: 1px solid #94a3b8;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, .28);
+}
+.vault-search-results .search-result,
+body[data-theme="dark"] .vault-search-results .search-result {
+  color: #172033 !important;
+  background: #ffffff !important;
+  min-height: 44px;
+}
+.vault-search-results .search-result strong,
+body[data-theme="dark"] .vault-search-results .search-result strong {
+  color: #111827 !important;
+  font-size: 14px;
+  font-weight: 650;
+}
+.vault-search-results .search-result span,
+.vault-search-results .search-empty,
+body[data-theme="dark"] .vault-search-results .search-result span,
+body[data-theme="dark"] .vault-search-results .search-empty {
+  color: #475569 !important;
+  font-size: 13px;
+}
+.vault-search-results .search-result:hover,
+.vault-search-results .search-result:focus-visible,
+.vault-search-results .search-result:active,
+body[data-theme="dark"] .vault-search-results .search-result:hover,
+body[data-theme="dark"] .vault-search-results .search-result:focus-visible,
+body[data-theme="dark"] .vault-search-results .search-result:active {
+  background: #e8f0fb !important;
+  color: #102a4c !important;
+  outline: 2px solid #6b93c7;
+  outline-offset: -2px;
+}
+.vault-search-results .search-result:hover strong,
+.vault-search-results .search-result:focus-visible strong,
+.vault-search-results .search-result:active strong {
+  color: #102a4c !important;
+}
+.note-content mark.search-highlight {
+  background: #ffdc62 !important;
+  color: #241800 !important;
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: #b77900;
+  text-decoration-thickness: 1px;
+}
+
+/* Branded confirmation shown before creating an encrypted vault export. */
+.export-confirm-content > p { margin: 0; line-height: 1.65; }
+.export-confirm-icon { width: 58px; height: 58px; display: grid; place-items: center; margin: 2px auto 8px; border-radius: 16px; background: #eaf2fc; color: #244d7c; font-size: 34px; font-weight: 700; }
+.export-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+.export-confirm-actions button { min-width: 130px; }
+@media(max-width:480px) { .export-confirm-actions { flex-direction: column-reverse; } .export-confirm-actions button { width: 100%; } }
+body[data-theme="dark"] .export-confirm-icon { background: #263b56; color: #c8e1ff; }
+
+.password-hint-field{display:flex;align-items:stretch;gap:8px}.password-hint-field input{flex:1;min-width:0}.password-hint-field button{flex:0 0 auto;min-width:66px}

@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import io
 import json
+import zipfile
+import stat
 import mimetypes
 import os
 import re
@@ -47,6 +49,8 @@ APP_HOME = Path(os.environ.get("MPS_HOME", Path.home() / ".my-private-space")).e
 CONFIG_PATH = APP_HOME / "config.me"
 STATE_PATH = APP_HOME / "state.me"
 STATE_OBFUSCATION = b"mps-state-obfuscation-v1"
+PASSWORD_HINT_PATH = APP_HOME / "password-hint.txt"
+VAULT_ARCHIVE_MAGIC = b"MPSVAULT1"
 LOCKOUT_SECONDS = 300
 IDLE_TIMEOUT_SECONDS = 300
 MANIFEST_NAME = "manifest.enc"
@@ -478,6 +482,7 @@ class SetupRequest(BaseModel):
     prefix: str = Field(min_length=1, max_length=32)
     manage_visibility: bool = False
     vault_type: str = "file"
+    create_directory: bool = False
     password: str
     confirm_password: str
 
@@ -498,8 +503,11 @@ def setup(payload: SetupRequest):
         if vault_type not in {"file", "password", "notes"}:
             raise HTTPException(400, "Choose a file, password, or notes vault.")
         root = Path(payload.target_directory).expanduser().resolve()
+        if not root.exists() and payload.create_directory:
+            try: root.mkdir(parents=True, exist_ok=False)
+            except Exception as exc: raise HTTPException(400, f"Could not create the destination folder: {exc}")
         if not root.exists() or not root.is_dir():
-            raise HTTPException(400, "Choose an existing directory for the vault.")
+            raise HTTPException(400, "Choose an existing directory, or enable folder creation.")
         if not os.access(root, os.W_OK):
             raise HTTPException(400, "The selected directory is not writable.")
         # macOS Finder may create .DS_Store in an otherwise empty folder.
@@ -537,6 +545,44 @@ def setup(payload: SetupRequest):
         manifest["_prefix"] = prefix
         STATE.update(root=root, key=key, manifest=manifest, unlocked=True, vaults=config["vaults"], active_vault_id=config["vaults"][0]["id"], active_vault_label=label, active_vault_type=vault_type, pending_config=None, last_activity=time.monotonic())
         return {"ok": True, "message": "Vault created.", "vault_label": label, "vault_type": vault_type, "vaults": config["vaults"]}
+
+
+class PasswordHintRequest(BaseModel):
+    hint: str = Field(default="", max_length=300)
+
+
+@app.get("/api/settings/password-hint")
+def read_password_hint_setting():
+    require_unlocked()
+    try:
+        hint = PASSWORD_HINT_PATH.read_text("utf-8") if PASSWORD_HINT_PATH.exists() else ""
+    except OSError:
+        hint = ""
+    return {"hint": hint}
+
+
+@app.put("/api/settings/password-hint")
+def update_password_hint_setting(payload: PasswordHintRequest):
+    require_unlocked()
+    hint = payload.hint.strip()
+    if hint:
+        atomic_write(PASSWORD_HINT_PATH, hint.encode("utf-8"))
+        try: os.chmod(PASSWORD_HINT_PATH, 0o600)
+        except OSError: pass
+    else:
+        PASSWORD_HINT_PATH.unlink(missing_ok=True)
+    return {"ok": True, "hint": hint}
+
+
+@app.get("/api/password-hint")
+def get_password_hint():
+    if not CONFIG_PATH.exists():
+        raise HTTPException(404, "No vault is configured.")
+    try:
+        hint = PASSWORD_HINT_PATH.read_text("utf-8") if PASSWORD_HINT_PATH.exists() else ""
+    except OSError:
+        hint = ""
+    return JSONResponse({"hint": hint}, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
 
 
 class PasswordRequest(BaseModel):
@@ -710,6 +756,7 @@ class CreateVaultRequest(BaseModel):
     convert_existing: bool = False
     manage_visibility: bool = False
     vault_type: str = "file"
+    create_directory: bool = False
 
 
 @app.post("/api/vaults/create")
@@ -728,8 +775,6 @@ def create_vault(payload: CreateVaultRequest):
         config = normalize_config(decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1"))
         if any(v["label"].casefold() == label.casefold() for v in config["vaults"]): raise HTTPException(409, "A vault with this label already exists.")
         root = Path(payload.target_directory).expanduser().resolve()
-        if not root.is_dir(): raise HTTPException(400, "Choose an existing destination directory.")
-        if not os.access(root, os.W_OK): raise HTTPException(400, "The selected directory is not writable.")
         # Never initialize or re-register a directory that is already in use by
         # any registered vault. samefile() also catches aliases/symlinks and
         # path spellings that differ only by case on case-insensitive filesystems.
@@ -744,6 +789,11 @@ def create_vault(payload: CreateVaultRequest):
                         or registered_root in root.parents)
             if same_directory or overlaps:
                 raise HTTPException(409, "This directory overlaps with an already registered vault. Choose a separate directory.")
+        if not root.exists() and payload.create_directory:
+            try: root.mkdir(parents=True, exist_ok=False)
+            except Exception as exc: raise HTTPException(400, f"Could not create the destination folder: {exc}")
+        if not root.is_dir(): raise HTTPException(400, "Choose an existing destination directory, or enable folder creation.")
+        if not os.access(root, os.W_OK): raise HTTPException(400, "The selected directory is not writable.")
 
         manifest_file = manifest_path(root)
         existing_items = [x for x in root.iterdir() if x.name != ".DS_Store"]
@@ -1011,6 +1061,210 @@ async def import_files(parent_id: str = Form(default=""), relative_paths: str = 
                 raise
             raise HTTPException(500, f"Import failed and was rolled back: {exc}")
         return {"ok": True, "imported": len(files)}
+
+
+def normalize_search_text(value: str) -> str:
+    """Normalize Arabic and Unicode presentation variants for reliable search."""
+    value = unicodedata.normalize("NFKC", value).casefold().replace("ـ", "")
+    value = "".join(char for char in value if not unicodedata.category(char).startswith("M"))
+    arabic_map = str.maketrans({
+        "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",
+        "ى": "ي", "ئ": "ي", "ؤ": "و",
+    })
+    return value.translate(arabic_map)
+
+
+@app.get("/api/search")
+def search_vault(q: str = "", scope: str = "label"):
+    root, key, manifest = require_unlocked()
+    query = normalize_search_text(q.strip())
+    if not query:
+        return {"items": []}
+    vault_type = manifest.get("vault_type", "file")
+    if scope not in {"label", "content"}:
+        raise HTTPException(400, "Invalid search scope.")
+    if scope == "content" and vault_type != "notes":
+        raise HTTPException(400, "Content search is available only in notes vaults.")
+    matches = []
+    for entry_id, entry in manifest.get("entries", {}).items():
+        if entry.get("deleted") or entry.get("locked") or has_locked_ancestor(manifest, entry):
+            continue
+        name = str(entry.get("name", ""))
+        found = query in normalize_search_text(name)
+        if not found and scope == "content" and entry.get("type") == "note":
+            try:
+                content = decrypt_bytes(key, entry_path(entry_id, manifest, root).read_bytes(), entry_aad("note", entry_id)).decode("utf-8", "replace")
+                found = query in normalize_search_text(content)
+            except Exception:
+                # A damaged note is not returned as a match; search never alters it.
+                found = False
+        if found:
+            matches.append({"id": entry_id, "name": name, "type": entry.get("type"), "locked": False})
+    matches.sort(key=lambda item: item["name"].casefold())
+    return {"items": matches[:250], "total": len(matches)}
+
+
+def _build_vault_archive(root: Path, key: bytes, label: str, prefix: str, vault_type: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("vault-info.json", json.dumps({"label": label, "prefix": prefix, "type": vault_type}, ensure_ascii=False))
+        for path in sorted(root.rglob("*")):
+            if path.is_symlink():
+                raise HTTPException(400, "Vault export stopped because the vault contains a symbolic link.")
+            if path.is_file():
+                archive.write(path, path.relative_to(root).as_posix())
+    encrypted = encrypt_bytes(key, buffer.getvalue(), b"mps:vault-export:v1")
+    return VAULT_ARCHIVE_MAGIC + encrypted
+
+
+def _extract_vault_archive(upload: bytes, key: bytes, staging: Path) -> dict[str, Any]:
+    if not upload.startswith(VAULT_ARCHIVE_MAGIC):
+        raise HTTPException(400, "This is not a My Private Space encrypted vault archive.")
+    try:
+        plain = decrypt_bytes(key, upload[len(VAULT_ARCHIVE_MAGIC):], b"mps:vault-export:v1")
+    except Exception:
+        raise HTTPException(400, "The archive could not be decrypted. Check that it was exported with this main password and is not damaged.")
+    try:
+        with zipfile.ZipFile(io.BytesIO(plain), "r") as archive:
+            for info in archive.infolist():
+                name = info.filename.replace("\\", "/")
+                parts = Path(name).parts
+                mode = (info.external_attr >> 16) & 0o170000
+                if (not name or name.startswith("/") or re.match(r"^[A-Za-z]:", name)
+                        or ".." in parts or "\x00" in name or mode == stat.S_IFLNK):
+                    raise ValueError("Unsafe archive path")
+                target = staging.joinpath(*parts)
+                if not target.resolve().is_relative_to(staging.resolve()):
+                    raise ValueError("Unsafe archive path")
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(info, "r") as source, open(target, "xb") as dest:
+                        shutil.copyfileobj(source, dest)
+        info_path = staging / "vault-info.json"
+        metadata = json.loads(info_path.read_text("utf-8"))
+        info_path.unlink()
+        manifest = decrypt_json(key, manifest_path(staging).read_bytes(), b"mps:manifest:v1")
+        if manifest.get("version") != 1 or not isinstance(manifest.get("entries"), dict):
+            raise ValueError("Invalid manifest")
+        vault_type = manifest.get("vault_type", "file")
+        if vault_type not in {"file", "password", "notes"} or metadata.get("type") != vault_type:
+            raise ValueError("Vault type mismatch")
+        prefix = str(metadata.get("prefix", ""))
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", prefix):
+            raise ValueError("Invalid storage prefix")
+        for entry_id, entry in manifest["entries"].items():
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", str(entry_id)) or not isinstance(entry, dict):
+                raise ValueError("Invalid entry metadata")
+            expected = entry_path(entry_id, manifest, staging)
+            if entry.get("type") == "folder":
+                if not expected.is_dir() and not entry.get("deleted"):
+                    raise ValueError("Missing folder data")
+            elif not expected.is_file() and not entry.get("deleted"):
+                raise ValueError("Missing entry data")
+        return {"manifest": manifest, "label": str(metadata.get("label") or "Imported vault")[:80], "prefix": prefix, "type": vault_type}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, f"The archive is invalid or incomplete: {exc}")
+
+
+@app.get("/api/vaults/export")
+def export_vault():
+    root, key, manifest = require_unlocked()
+    vault = next((v for v in STATE.get("vaults", []) if v.get("id") == STATE.get("active_vault_id")), {})
+    data = _build_vault_archive(root, key, vault.get("label", "Vault"), vault.get("prefix", ""), manifest.get("vault_type", "file"))
+    filename = re.sub(r"[^A-Za-z0-9_-]+", "-", vault.get("label", "vault")).strip("-") or "vault"
+    return Response(data, media_type="application/vnd.mps.vault+zip", headers={"Content-Disposition": f'attachment; filename="{filename}.mpsvault.zip"', "Cache-Control": "no-store"})
+
+
+@app.post("/api/vaults/import")
+async def import_vault(archive: UploadFile = File(...), mode: str = Form(...), target_directory: str = Form(default=""), label: str = Form(default=""), create_directory: bool = Form(default=False)):
+    with MUTATION_LOCK:
+        _, key, _ = require_unlocked()
+        if mode not in {"create", "replace"}:
+            raise HTTPException(400, "Choose create or replace.")
+        raw = await archive.read(512 * 1024 * 1024 + 1)
+        if len(raw) > 512 * 1024 * 1024:
+            raise HTTPException(413, "The vault archive exceeds the 512 MB import limit.")
+        if mode == "replace":
+            root = STATE["root"]
+            current_vault = next((v for v in STATE["vaults"] if v.get("id") == STATE["active_vault_id"]), None)
+            if not current_vault:
+                raise HTTPException(409, "No active vault is selected.")
+            parent = root.parent
+            staging = parent / (".mps-import-" + secrets.token_hex(8))
+            backup = parent / (".mps-before-import-" + secrets.token_hex(8))
+            try:
+                staging.mkdir()
+                metadata = _extract_vault_archive(raw, key, staging)
+                old_root = root
+                os.replace(old_root, backup)
+                try:
+                    os.replace(staging, old_root)
+                    config = normalize_config(decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1"))
+                    for item in config["vaults"]:
+                        if item["id"] == current_vault["id"]:
+                            item["type"] = metadata["type"]
+                            item["prefix"] = metadata["prefix"]
+                    save_config(key, config)
+                except Exception:
+                    if old_root.exists(): shutil.rmtree(old_root, ignore_errors=True)
+                    if backup.exists(): os.replace(backup, old_root)
+                    raise
+                current_vault["type"] = metadata["type"]
+                current_vault["prefix"] = metadata["prefix"]
+                metadata["manifest"]["_prefix"] = metadata["prefix"]
+                STATE.update(root=old_root, manifest=metadata["manifest"], active_vault_type=metadata["type"], vaults=config["vaults"], last_activity=time.monotonic())
+                shutil.rmtree(backup, ignore_errors=True)
+                return {"ok": True, "mode": "replace", "vault_label": current_vault["label"], "vault_type": metadata["type"]}
+            except HTTPException:
+                shutil.rmtree(staging, ignore_errors=True)
+                raise
+            except Exception as exc:
+                shutil.rmtree(staging, ignore_errors=True)
+                raise HTTPException(500, f"Vault replacement failed safely: {exc}")
+        label = label.strip() or "Imported " + datetime.now().strftime("%Y%m%d-%H%M")
+        if len(label) > 80:
+            raise HTTPException(400, "Vault label must be 80 characters or fewer.")
+        config = normalize_config(decrypt_json(key, CONFIG_PATH.read_bytes(), b"mps:config:v1"))
+        if any(v["label"].casefold() == label.casefold() for v in config["vaults"]):
+            raise HTTPException(409, "A vault with this label already exists.")
+        root = Path(target_directory).expanduser().resolve()
+        for v in config["vaults"]:
+            other = Path(v["location"]).expanduser().resolve()
+            if root == other or root in other.parents or other in root.parents:
+                raise HTTPException(409, "Destination overlaps with a registered vault.")
+        if not root.exists() and create_directory:
+            root.mkdir(parents=True, exist_ok=False)
+        if not root.is_dir():
+            raise HTTPException(400, "Choose an empty destination folder, or enable folder creation for a new folder.")
+        existing_items = [item for item in root.iterdir() if item.name != ".DS_Store"]
+        if existing_items:
+            raise HTTPException(400, "Choose an empty destination folder, or enable folder creation for a new folder.")
+        (root / ".DS_Store").unlink(missing_ok=True)
+        staging = root.parent / (".mps-import-" + secrets.token_hex(8))
+        try:
+            staging.mkdir()
+            metadata = _extract_vault_archive(raw, key, staging)
+            # Move verified archive contents into the requested empty destination.
+            for item in staging.iterdir():
+                os.replace(item, root / item.name)
+            staging.rmdir()
+            new_vault = {"id": "vault-" + secrets.token_hex(8), "label": label, "location": str(root), "prefix": metadata["prefix"], "type": metadata["type"], "manage_visibility": False}
+            config["vaults"].append(new_vault)
+            config["last_used_vault"] = new_vault["id"]
+            save_config(key, config)
+            metadata["manifest"]["_prefix"] = metadata["prefix"]
+            STATE.update(root=root, key=key, manifest=metadata["manifest"], unlocked=True, vaults=config["vaults"], active_vault_id=new_vault["id"], active_vault_label=label, active_vault_type=metadata["type"], pending_config=None, last_activity=time.monotonic())
+            return {"ok": True, "mode": "create", "vault_label": label, "vault_type": metadata["type"]}
+        except HTTPException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+        except Exception as exc:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise HTTPException(500, f"Vault import failed: {exc}")
 
 
 class PasswordEntryRequest(BaseModel):

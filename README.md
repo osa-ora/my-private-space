@@ -16,11 +16,11 @@ A local-first encrypted vault application with file, password, and notes vaults,
 
 - **Local-first:** Runs on your computer and binds to `127.0.0.1`.
 - **Three vault types:** Choose a File Vault for files and folders, a Password Vault for sensitive password entries, or a Notes Vault for named text notes.
-- **Encrypted storage:** Protects file contents, password entries, notes, vault manifests, and the application registry using authenticated encryption.
-- **Multiple vaults:** Manage separate vaults with one main password, switch between them, and store them in independent directories.
+- **Encrypted storage:** Protects file contents, password entries, notes, vault manifests, the application registry, and exported vault archives using authenticated encryption.
+- **Multiple vaults:** Manage separate vaults with one main password, switch between them, and store them in independent directories. Search filenames and password-entry names, or choose note-label/content search.
 - **Drag-and-drop imports:** Add files and folders by dragging them into the application, with the destination determined by the drop target.
 - **Password management:** Add, view, copy, update, and delete password entries. Passwords remain masked by default.
-- **Notes:** Add named notes with multiline text, view and edit them, and move them to Deleted Items.
+- **Notes:** Add named notes with multiline text, view and edit them, and move them to Deleted Items. Search by note label or decrypted content while unlocked.
 - **Visibility management:** Optionally let My Private Space hide a vault directory when registered and make it visible when unregistered, without renaming the directory.
 - **Familiar interface:** Browse folders, preview supported files, play supported media, and use light or dark themes in a desktop browser.
 - **Recoverable deletion:** Move supported items to Deleted Items and restore them before permanent deletion.
@@ -46,7 +46,10 @@ A local-first encrypted vault application with file, password, and notes vaults,
 |---|---|
 | Vault types | Create File Vaults, Password Vaults, or Notes Vaults during initial setup or when creating additional vaults |
 | Vault management | Create, select, switch, lock, relocate, register, and unregister vaults |
-| Vault setup | Create a vault in an empty directory, register an existing valid vault, or explicitly convert an ordinary folder into a File Vault |
+| Vault setup | Create a vault in an empty directory, optionally create the destination folder, register an existing valid vault, or explicitly convert an ordinary folder into a File Vault |
+| Search | Search filenames, password-entry names, note labels, or note content (user-selectable; note labels are the default) |
+| Vault transfer | Export a complete vault as an encrypted ZIP; import it as a new vault or replace the active vault after confirmation |
+| Password hint | Configure or update an optional hint in Settings and display it from Forgot password on the unlock screen; the hint cannot recover the password |
 | Encrypted files | Encrypt file contents and maintain the vault hierarchy in an encrypted manifest |
 | Drag-and-drop | Import files and folders by dropping them into the tree or designated import area |
 | Import destinations | Detect the destination from the selected folder or drop target, including nested folders |
@@ -182,13 +185,15 @@ A Notes Vault stores named text notes rather than files or passwords. Its interf
 - Editing the note name or text.
 - Moving a note to Deleted Items and restoring it when needed.
 
-<img width="1714" height="842" alt="Screenshot 2026-11-02 at 11 22 08 PM" src="https://github.com/user-attachments/assets/3b8d0765-a8a5-42d6-ae16-e37492255b3d" />
-
 Note text is encrypted as an individual payload using the vault's main key. The encrypted manifest stores the note name, timestamps, and size; it does not store the plaintext note content. Notes are protected by the main vault password and do not use secondary item locks.
 
 File and folder import operations are not available in a Notes Vault. The interface is designed around named text notes.
 
 A vault has a type, and the application must treat it consistently when opening and operating on that vault. Existing vaults created before vault types were introduced default to the File Vault type for backward compatibility.
+
+### Search
+
+The search box in the vault navigation panel searches filenames in File Vaults and password-entry names/keys in Password Vaults. In Notes Vaults, the scope selector searches note labels by default or decrypted note content when selected. Content search is available only while the vault is unlocked; locked and deleted items are excluded.
 
 ### One main password, multiple vaults
 
@@ -336,11 +341,11 @@ My Private Space is intended for local use, but **local-first does not mean secu
 - **Transaction recovery:** Password changes, relocation, and conversion use staging, verification, and recovery mechanisms, but these paths have not been exhaustively tested under every power-loss or filesystem-failure condition.
 - **Local API:** The server binds to loopback and uses host/origin and per-process API-token protections. These controls are not a substitute for an independent security review.
 
-Use a strong, unique main password, keep your operating system updated, and lock the vault when leaving the computer unattended.
+Use a strong, unique main password, keep your operating system updated, and lock the vault when leaving the computer unattended. Configure or update the hint from Settings after unlocking. The hint is intentionally readable before login, so keep it non-sensitive; it cannot recover or reset a forgotten password.
 
 ## Backups and recovery
 
-Back up the application configuration directory and **all registered vault directories together**. Keep an additional copy somewhere protected and separate from the computer running the application.
+Back up the application configuration directory and **all registered vault directories together**. You can also use Export encrypted vault to create a portable, authenticated-encryption ZIP archive of the active vault. Keep an additional copy somewhere protected and separate from the computer running the application.
 
 The configuration directory is:
 
@@ -353,10 +358,11 @@ Important files include:
 |---|---|
 | `config.me` | Encrypted registry used to locate registered vaults and store vault configuration |
 | `state.me` | Persistent failed-login and lockout state |
+| `password-hint.txt` | Optional user-written password hint, managed from Settings and stored locally so it can be shown before unlocking; it is not encrypted and must not contain the password |
 | Vault directories | Encrypted manifests and stored content, including password entries and notes |
 | Transaction journals and recovery artifacts | May be needed to recover an interrupted operation |
 
-A valid vault can be registered again if the registry is lost, provided the vault directory and correct main password are available.
+An exported encrypted vault can be imported using the same main password that encrypted it. Import can create a separate vault or replace the currently open vault after an explicit warning. The archive is verified before replacement; export a backup first. A valid vault can also be registered again if the registry is lost, provided the vault directory and correct main password are available.
 
 After a main-password change, restore a matching set of registry and vault backups. Restoring only an old registry may not match the current vault encryption state.
 

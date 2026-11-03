@@ -2,7 +2,7 @@
   'use strict';
   const token = document.querySelector('meta[name="mps-token"]').content;
   const $ = (id) => document.getElementById(id);
-  const state = { unlocked: false, selectedId: null, selectedEntry: null, importParent: '', treeItems: [], expanded: new Set(), theme: localStorage.getItem('mps-theme') || 'light-navy', previewUrl: null, lastActivity: Date.now(), idleLocked: false, vaultType: 'file', noteFontSize: 14 };
+  const state = { vaultLabel: '', unlocked: false, selectedId: null, selectedEntry: null, importParent: '', treeItems: [], expanded: new Set(), theme: localStorage.getItem('mps-theme') || 'light-navy', previewUrl: null, lastActivity: Date.now(), idleLocked: false, vaultType: 'file', noteFontSize: 14, imageZoom: 1, pdfPage: 1, pdfZoom: 100, searchQuery: '', searchScope: 'label' };
   const screens = ['setupScreen', 'unlockScreen', 'workspace'];
   const dialogs = ['settingsDialog', 'createVaultDialog', 'switchVaultDialog', 'helpDialog', 'trashDialog', 'contextDialog', 'importDialog', 'exportDialog', 'passwordEntryDialog', 'noteEntryDialog'];
 
@@ -25,16 +25,46 @@
     clearTimeout(toastTimer);
   }
   function toast(message) { const el = $('toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600); }
-  function showScreen(id) { clearAllMessages(); screens.forEach(s => $(s).classList.toggle('hidden', s !== id)); $('lockVaultButton').classList.toggle('hidden', id !== 'workspace'); $('switchVaultButton').classList.toggle('hidden', id !== 'workspace'); $('createVaultButton').classList.toggle('hidden', id !== 'workspace'); }
+  function showScreen(id) { clearAllMessages(); screens.forEach(s => $(s).classList.toggle('hidden', s !== id)); ['lockVaultButton','switchVaultButton','createVaultButton','exportVaultButton','importVaultButton'].forEach(button => $(button).classList.toggle('hidden', id !== 'workspace')); }
   function applyTheme(theme) { state.theme = theme; document.body.dataset.theme = theme; localStorage.setItem('mps-theme', theme); if ($('themeSelect')) $('themeSelect').value = theme; }
   function closePreviewUrl() { if (state.previewUrl) URL.revokeObjectURL(state.previewUrl); state.previewUrl = null; }
   function escapeHtml(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function makeActionButton(label, icon, onClick, variant = 'secondary-button', title = label) {
+    const paths = {
+      copy: '<rect x="9" y="9" width="11" height="12" rx="2"/><path d="M15 5H6a2 2 0 0 0-2 2v10"/>',
+      add: '<path d="M12 5v14M5 12h14"/>',
+      lock: '<rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+      unlock: '<rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 7.2-2.4"/>',
+      edit: '<path d="m4 16-.8 4.8L8 20l11-11-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/>',
+      show: '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+      hide: '<path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.5 0 10 6 10 6a16 16 0 0 1-3 3.5M6.2 6.3C3.5 8 2 12 2 12s3.5 6 10 6c1.2 0 2.3-.2 3.3-.6"/>',
+      download: '<path d="M12 3v12m-5-5 5 5 5-5M4 20h16"/>',
+      trash: '<path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"/>',
+      previous: '<path d="m15 18-6-6 6-6"/>',
+      next: '<path d="m9 18 6-6-6-6"/>',
+      zoomIn: '<circle cx="10.8" cy="10.8" r="6.8"/><path d="M16 16l5 5M10.8 7.5v6.6m-3.3-3.3h6.6"/>',
+      zoomOut: '<circle cx="10.8" cy="10.8" r="6.8"/><path d="M16 16l5 5M7.5 10.8h6.6"/>',
+      fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+      fullscreen: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
+      refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.5-3"/>',
+    };
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = variant; button.title = title; button.setAttribute('aria-label', title);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.9'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+    svg.innerHTML = paths[icon] || paths.add;
+    const text = document.createElement('span'); text.textContent = label;
+    button.append(svg, text); if (onClick) button.addEventListener('click', onClick); return button;
+  }
   async function refreshTree() {
     const data = await api('/api/tree');
     $('trashCount').textContent = data.trash_count;
     state.treeItems = data.items || [];
     setVaultType(data.vault_type || 'file');
     $('tree').innerHTML = '';
+    $('vaultSearchScope').classList.toggle('hidden', state.vaultType !== 'notes');
+    if (state.vaultType !== 'notes') { $('vaultSearchScope').querySelector('input[value=label]').checked = true; state.searchScope = 'label'; }
     if (state.vaultType === 'file') renderRootDropTarget($('tree'));
     renderTreeItems(state.treeItems, $('tree'), 0);
     if (state.selectedId) {
@@ -69,10 +99,14 @@
       const expanded = state.expanded.has(item.id);
       const chevron = document.createElement('span'); chevron.className = 'tree-chevron'; chevron.textContent = item.type === 'folder' ? (item.locked ? '•' : (hasChildren ? (expanded ? '▾' : '▸') : '')) : '';
       const icon = document.createElement('span'); icon.className = `tree-icon${item.type === 'folder' && !item.locked ? ' folder-tree-icon' : ''}`;
-      if (item.type === 'folder' && !item.locked) { icon.innerHTML = '<svg viewBox="0 0 32 26" aria-hidden="true"><path d="M2.5 5.5A3 3 0 0 1 5.5 2.5h7l3 3h11A3 3 0 0 1 29.5 8.5v12a3 3 0 0 1-3 3h-21a3 3 0 0 1-3-3Z" fill="#e6b957" stroke="#b98527" stroke-width="1.5"/><path d="M2.5 10h27l-2.2 10.5a3 3 0 0 1-2.9 2.3H5.5a3 3 0 0 1-3-3Z" fill="#ffd978" stroke="#b98527" stroke-width="1.2"/></svg>'; } else { icon.textContent = item.locked ? '🔒' : (item.type === 'password' ? '🔑' : (item.type === 'note' ? '📝' : '▤')); }
+      if (item.type === 'folder' && !item.locked) { icon.innerHTML = '<svg viewBox="0 0 32 26" aria-hidden="true"><path d="M2.5 5.5A3 3 0 0 1 5.5 2.5h7l3 3h11A3 3 0 0 1 29.5 8.5v12a3 3 0 0 1-3 3h-21a3 3 0 0 1-3-3Z" fill="#e6b957" stroke="#b98527" stroke-width="1.5"/><path d="M2.5 10h27l-2.2 10.5a3 3 0 0 1-2.9 2.3H5.5a3 3 0 0 1-3-3Z" fill="#ffd978" stroke="#b98527" stroke-width="1.2"/></svg>'; }
+      else if (item.locked) { icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>'; }
+      else if (item.type === 'password') { icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="12" r="5" fill="#f4c45e" stroke="#a97920" stroke-width="1.5"/><path d="M13 12h8m-3 0v3m-3-3v2" stroke="#a97920" stroke-width="2" stroke-linecap="round"/></svg>'; }
+      else if (item.type === 'note') { icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l4 4v14H5z" fill="#dcecff" stroke="#4b78ad" stroke-width="1.5"/><path d="M15 3v5h4M8 12h8M8 16h8" fill="none" stroke="#4b78ad" stroke-width="1.5" stroke-linecap="round"/></svg>'; }
+      else { icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 2.5h9l5 5V21H5z" fill="#e8eef7" stroke="#607b9e" stroke-width="1.5"/><path d="M14 2.5v5h5M8 12h8M8 16h8" fill="none" stroke="#607b9e" stroke-width="1.5" stroke-linecap="round"/></svg>'; }
       const name = document.createElement('span'); name.className = 'tree-name'; name.textContent = item.name;
       row.append(chevron, icon, name);
-      if (item.locked) { const lock = document.createElement('span'); lock.className = 'tree-icon'; lock.textContent = '•'; row.append(lock); }
+      if (item.locked) { const lock = document.createElement('span'); lock.className = 'tree-lock-badge'; lock.textContent = 'LOCKED'; row.append(lock); }
       const more = document.createElement('button'); more.className = 'tree-more'; more.type = 'button'; more.title = 'Item actions'; more.setAttribute('aria-label', `Actions for ${item.name}`); more.textContent = '⋯'; more.addEventListener('click', e => { e.stopPropagation(); openContext(item); }); row.append(more);
       row.addEventListener('click', () => {
         row.focus({ preventScroll: true });
@@ -119,7 +153,7 @@
       $('previewActions').innerHTML = '';
       $('previewContent').className = 'preview-content empty-state';
       $('previewContent').innerHTML = '<div class="empty-icon">🔒</div><h3>Item locked</h3><p>Unlock this item to access its contents.</p>';
-      const unlock = document.createElement('button'); unlock.className = 'primary-button'; unlock.type = 'button'; unlock.textContent = 'Unlock'; unlock.addEventListener('click', () => openItemPasswordDialog('unlock', item)); $('previewActions').append(unlock);
+      const unlock = makeActionButton('Unlock', 'unlock', () => openItemPasswordDialog('unlock', item), 'primary-button'); $('previewActions').append(unlock);
     } else if (item.type === 'folder') selectFolder(item);
     else if (item.type === 'file') selectEntry(item);
     else if (item.type === 'password') selectPassword(item);
@@ -174,17 +208,17 @@
     const strengthFeedback = document.createElement('p'); strengthFeedback.className = 'password-strength-feedback'; strengthFeedback.textContent = 'Checking locally on this device…';
     strength.append(strengthHeader, strengthTrack, strengthFeedback);
     const actions = document.createElement('div'); actions.className = 'password-preview-actions';
-    const show = document.createElement('button'); show.className = 'primary-button'; show.type = 'button'; show.textContent = 'Show';
+    const show = makeActionButton('Show', 'show', null, 'primary-button');
     let revealed = false, secret = '';
     show.addEventListener('click', async () => {
       if (state.selectedId !== item.id) return;
-      if (revealed) { secret = ''; value.textContent = '***'; value.setAttribute('aria-label', 'Password hidden'); show.textContent = 'Show'; revealed = false; return; }
+      if (revealed) { secret = ''; value.textContent = '***'; value.setAttribute('aria-label', 'Password hidden'); show.querySelector('span').textContent = 'Show'; show.querySelector('svg').innerHTML = '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'; revealed = false; return; }
       show.disabled = true;
-      try { const result = await api(`/api/passwords/${encodeURIComponent(item.id)}/reveal`); if (state.selectedId !== item.id) return; secret = result.value; value.textContent = secret; value.setAttribute('aria-label', 'Password shown'); show.textContent = 'Hide'; revealed = true; }
+      try { const result = await api(`/api/passwords/${encodeURIComponent(item.id)}/reveal`); if (state.selectedId !== item.id) return; secret = result.value; value.textContent = secret; value.setAttribute('aria-label', 'Password shown'); show.querySelector('span').textContent = 'Hide'; show.querySelector('svg').innerHTML = '<path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.5 0 10 6 10 6a16 16 0 0 1-3 3.5M6.2 6.3C3.5 8 2 12 2 12s3.5 6 10 6c1.2 0 2.3-.2 3.3-.6"/>'; revealed = true; }
       catch (e) { toast(e.message); }
       finally { show.disabled = false; }
     });
-    const copy = document.createElement('button'); copy.className = 'secondary-button'; copy.type = 'button'; copy.textContent = 'Copy';
+    const copy = makeActionButton('Copy', 'copy', null);
     copy.addEventListener('click', async () => { try { const result = await api(`/api/passwords/${encodeURIComponent(item.id)}/reveal`); if (state.selectedId !== item.id) return; await copySecret(result.value); toast('Password copied to clipboard.'); } catch(e) { toast(e.message); } });
     actions.append(show, copy); content.append(art, heading, message, value, metadata, strength, actions);
     api(`/api/passwords/${encodeURIComponent(item.id)}/strength`).then(result => {
@@ -200,6 +234,41 @@
       strengthFeedback.textContent = 'Strength could not be assessed.';
     });
   }
+  function normalizeSearchForHighlight(value) {
+    return String(value).normalize('NFKC').toLocaleLowerCase().replace(/[\u0640\u064B-\u065F\u0670\u06D6-\u06ED]/g, '')
+      .replace(/[أإآٱ]/g, 'ا').replace(/[ىئ]/g, 'ي').replace(/ؤ/g, 'و');
+  }
+  function appendHighlightedNoteText(element, source, query) {
+    const normalizedQuery = normalizeSearchForHighlight(query);
+    if (!normalizedQuery) { element.textContent = source; return; }
+    let normalized = '';
+    const starts = [], ends = [];
+    let sourceOffset = 0;
+    for (const character of source) {
+      const start = sourceOffset;
+      sourceOffset += character.length;
+      const part = normalizeSearchForHighlight(character);
+      normalized += part;
+      for (let i = 0; i < part.length; i++) { starts.push(start); ends.push(sourceOffset); }
+    }
+    const fragment = document.createDocumentFragment();
+    let sourceCursor = 0, searchFrom = 0, matchAt;
+    while ((matchAt = normalized.indexOf(normalizedQuery, searchFrom)) !== -1) {
+      const originalStart = starts[matchAt];
+      const originalEnd = ends[matchAt + normalizedQuery.length - 1];
+      if (originalStart === undefined || originalEnd === undefined || originalEnd <= sourceCursor) { searchFrom = matchAt + 1; continue; }
+      fragment.append(document.createTextNode(source.slice(sourceCursor, originalStart)));
+      const mark = document.createElement('mark');
+      mark.className = 'search-highlight';
+      mark.textContent = source.slice(originalStart, originalEnd);
+      fragment.append(mark);
+      sourceCursor = originalEnd;
+      searchFrom = matchAt + Math.max(1, normalizedQuery.length);
+    }
+    fragment.append(document.createTextNode(source.slice(sourceCursor)));
+    element.append(fragment);
+  }
+
   async function selectNote(item) {
     closePreviewUrl();
     state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
@@ -208,22 +277,11 @@
     $('previewActions').innerHTML = '';
     let noteText = '';
     const actions = $('previewActions');
-    const copy = document.createElement('button');
-    copy.className = 'secondary-button'; copy.type = 'button'; copy.textContent = 'Copy';
-    copy.addEventListener('click', async () => {
-      try { await copySecret(noteText); toast('Note copied to clipboard.'); }
-      catch (error) { toast(error.message); }
-    });
-    const decrease = document.createElement('button');
-    decrease.className = 'secondary-button note-font-button'; decrease.type = 'button'; decrease.textContent = '−';
-    decrease.title = 'Decrease note font size'; decrease.setAttribute('aria-label', 'Decrease note font size');
-    const increase = document.createElement('button');
-    increase.className = 'secondary-button note-font-button'; increase.type = 'button'; increase.textContent = '+';
-    increase.title = 'Increase note font size'; increase.setAttribute('aria-label', 'Increase note font size');
-    const edit = document.createElement('button');
-    edit.className = 'secondary-button'; edit.type = 'button'; edit.textContent = 'Edit note';
-    edit.addEventListener('click', () => openNoteEditor(item));
-    const lock = document.createElement('button'); lock.className = 'secondary-button'; lock.type = 'button'; lock.textContent = 'Lock'; lock.addEventListener('click', () => openItemPasswordDialog('lock', item));
+    const copy = makeActionButton('Copy', 'copy', async () => { try { await copySecret(noteText); toast('Note copied to clipboard.'); } catch (error) { toast(error.message); } });
+    const decrease = makeActionButton('Smaller text', 'zoomOut', null, 'secondary-button note-font-button', 'Decrease note font size');
+    const increase = makeActionButton('Larger text', 'zoomIn', null, 'secondary-button note-font-button', 'Increase note font size');
+    const edit = makeActionButton('Edit note', 'edit', () => openNoteEditor(item));
+    const lock = makeActionButton('Lock', 'lock', () => openItemPasswordDialog('lock', item));
     actions.append(copy, decrease, increase, edit, lock);
     const content = $('previewContent');
     content.className = 'preview-content note-preview';
@@ -235,7 +293,8 @@
       content.replaceChildren();
       const heading = document.createElement('h3'); heading.textContent = result.name;
       noteText = result.content;
-      const text = document.createElement('pre'); text.className = 'note-content'; text.textContent = noteText;
+      const text = document.createElement('pre'); text.className = 'note-content';
+      if (state.searchScope === 'content' && state.searchQuery) appendHighlightedNoteText(text, noteText, state.searchQuery); else text.textContent = noteText;
       const applyNoteFontSize = () => { text.style.fontSize = `${state.noteFontSize}px`; };
       decrease.addEventListener('click', () => { state.noteFontSize = Math.max(10, state.noteFontSize - 1); applyNoteFontSize(); });
       increase.addEventListener('click', () => { state.noteFontSize = Math.min(32, state.noteFontSize + 1); applyNoteFontSize(); });
@@ -272,7 +331,7 @@
   async function selectEntry(item) {
     state.selectedId = item.id; state.selectedEntry = item; updateTreeSelection();
     $('previewTitle').textContent = item.name; $('previewEyebrow').textContent = 'FILE PREVIEW'; $('previewActions').innerHTML = '';
-    const lockButton = document.createElement('button'); lockButton.className = 'secondary-button'; lockButton.textContent = 'Lock'; lockButton.onclick = () => openItemPasswordDialog('lock', item); $('previewActions').append(lockButton);
+    const lockButton = makeActionButton('Lock', 'lock', () => openItemPasswordDialog('lock', item)); $('previewActions').append(lockButton);
     $('previewContent').className = 'preview-content'; $('previewContent').innerHTML = '<div class="empty-state"><p>Loading preview…</p></div>';
     try {
       closePreviewUrl();
@@ -294,8 +353,32 @@
         state.previewUrl = URL.createObjectURL(blob);
       }
       if (['zip', 'docx'].includes(extension)) { await refreshTree(); return; }
-      if (mime.startsWith('image/') && mime !== 'image/svg+xml') { const img = document.createElement('img'); img.className = 'preview-image'; img.alt = item.name; img.src = state.previewUrl; content.append(img); }
-      else if (mime === 'application/pdf') { const frame = document.createElement('iframe'); frame.className = 'preview-frame'; frame.title = item.name; frame.src = state.previewUrl + '#toolbar=0&navpanes=0'; content.append(frame); }
+      if (mime.startsWith('image/') && mime !== 'image/svg+xml') {
+        state.imageZoom = 1;
+        const zoomLabel = document.createElement('span'); zoomLabel.className = 'image-zoom-status'; zoomLabel.textContent = '100%';
+        const stage = document.createElement('div'); stage.className = 'image-viewer-stage';
+        const img = document.createElement('img'); img.className = 'preview-image'; img.alt = item.name; img.src = state.previewUrl;
+        const updateImageZoom = () => { img.style.transform = `scale(${state.imageZoom})`; zoomLabel.textContent = `${Math.round(state.imageZoom * 100)}%`; };
+        $('previewActions').append(
+          makeActionButton('Zoom out', 'zoomOut', () => { state.imageZoom = Math.max(.2, state.imageZoom - .1); updateImageZoom(); }, 'secondary-button image-zoom-action', 'Zoom out'),
+          makeActionButton('Zoom in', 'zoomIn', () => { state.imageZoom = Math.min(4, state.imageZoom + .1); updateImageZoom(); }, 'secondary-button image-zoom-action', 'Zoom in'),
+          makeActionButton('Fit image', 'fit', () => { state.imageZoom = 1; updateImageZoom(); }, 'secondary-button image-zoom-action', 'Fit image'),
+          zoomLabel
+        );
+        stage.append(img); content.append(stage);
+      }
+      else if (mime === 'application/pdf') {
+        // Use the browser's built-in PDF viewer. Its native toolbar owns page
+        // navigation, zoom, fit, download and print; do not recreate those controls.
+        const viewer = document.createElement('div'); viewer.className = 'pdf-viewer';
+        const frame = document.createElement('iframe');
+        frame.className = 'preview-frame pdf-frame';
+        frame.title = `${item.name} PDF preview`;
+        frame.setAttribute('aria-label', `${item.name} PDF preview with browser PDF controls`);
+        frame.src = `${state.previewUrl}#toolbar=1&navpanes=0&scrollbar=1&view=Fit`;
+        viewer.append(frame);
+        content.append(viewer);
+      }
       else if (mime.startsWith('audio/')) { const media = document.createElement('audio'); media.className = 'preview-media'; media.controls = true; media.src = state.previewUrl; content.append(media); }
       else if (mime.startsWith('video/')) { const media = document.createElement('video'); media.className = 'preview-media'; media.controls = true; media.autoplay = true; media.muted = true; media.playsInline = true; media.src = state.previewUrl; content.append(media); }
       else if (mime.startsWith('text/') || mime === 'image/svg+xml' || /json|xml|javascript|markdown/.test(mime) || /\.(txt|md|csv|log|json|ya?ml|xml|py|js|css|toml|ini)$/i.test(item.name)) {
@@ -307,7 +390,7 @@
   function openContext(item) {
     $('contextTitle').textContent = item.name;
     const actions = $('contextActions'); actions.innerHTML = '';
-    const add = (label, fn, danger = false) => { const button = document.createElement('button'); button.className = `action-item${danger ? ' danger' : ''}`; button.textContent = label; button.onclick = async () => { $('contextDialog').close(); try { await fn(); } catch (e) { toast(e.message); } }; actions.append(button); };
+    const add = (label, fn, danger = false) => { const key = /unlock/i.test(label) ? 'unlock' : /lock/i.test(label) ? 'lock' : /copy/i.test(label) ? 'copy' : /add/i.test(label) ? 'add' : /delete|permanently/i.test(label) ? 'trash' : /restore/i.test(label) ? 'download' : /edit|update/i.test(label) ? 'edit' : 'fit'; const visual = makeActionButton(label, key, null, `action-item${danger ? ' danger' : ''}`); visual.onclick = async () => { $('contextDialog').close(); try { await fn(); } catch (e) { toast(e.message); } }; actions.append(visual); };
     if (item.locked) {
       add('Unlock…', () => openItemPasswordDialog('unlock', item));
     } else if (item.type === 'password') {
@@ -647,7 +730,9 @@
     }
     $('trashDialog').showModal();
   }
-  async function loadSettings() { const s = await api('/api/settings'); $('newTargetDirectory').value = s.target_directory; $('themeSelect').value = state.theme; $('settingsVaultLabel').textContent = s.vault_label || ''; $('settingsVaultPrefix').textContent = s.prefix || '(legacy vault; no prefix)'; }
+  async function loadSettings() { const s = await api('/api/settings'); const hint = await api('/api/settings/password-hint'); $('newTargetDirectory').value = s.target_directory; $('themeSelect').value = state.theme; $('settingsVaultLabel').textContent = s.vault_label || ''; $('settingsVaultPrefix').textContent = s.prefix || '(legacy vault; no prefix)'; $('settingsPasswordHint').value = hint.hint || ''; $('settingsPasswordHint').type = 'password'; $('togglePasswordHintButton').textContent = 'Show'; $('togglePasswordHintButton').setAttribute('aria-pressed', 'false'); }
+  async function savePasswordHint() { try { await api('/api/settings/password-hint', {method:'PUT', body:JSON.stringify({hint:$('settingsPasswordHint').value.trim()})}); $('settingsPasswordHint').type = 'password'; $('togglePasswordHintButton').textContent = 'Show'; $('togglePasswordHintButton').setAttribute('aria-pressed', 'false'); showMessage('settingsMessage', 'Password hint saved.', true); toast('Password hint saved.'); } catch(e) { showMessage('settingsMessage', e.message); } }
+  function togglePasswordHintVisibility() { const field = $('settingsPasswordHint'); const reveal = field.type === 'password'; field.type = reveal ? 'text' : 'password'; $('togglePasswordHintButton').textContent = reveal ? 'Hide' : 'Show'; $('togglePasswordHintButton').setAttribute('aria-pressed', String(reveal)); }
   async function moveVault() {
     const target = $('newTargetDirectory').value.trim(); if (!target) { showMessage('settingsMessage', 'Enter a destination directory.'); return; }
     if (!confirm('Copy and verify the vault in the destination directory? The original will remain intact.')) return;
@@ -670,13 +755,16 @@
     if (event.target.closest('#previewContent') && (event.ctrlKey || event.metaKey) && ['s', 'p', 'u'].includes(event.key.toLowerCase())) event.preventDefault();
   });
 
-  function setVaultLabel(label) { $('sidebarVaultLabel').textContent = label || 'Vault locked'; }
+  function setVaultLabel(label) { state.vaultLabel = label || ''; $('sidebarVaultLabel').textContent = label || 'Vault locked'; }
   function setVaultType(type) {
     state.vaultType = ['password', 'notes'].includes(type) ? type : 'file';
     $('importRootButton').classList.toggle('hidden', state.vaultType !== 'file');
     $('addPasswordButton').classList.toggle('hidden', state.vaultType !== 'password');
     $('addNoteButton').classList.toggle('hidden', state.vaultType !== 'notes');
     $('tree').setAttribute('aria-label', state.vaultType === 'password' ? 'Saved passwords' : (state.vaultType === 'notes' ? 'Saved notes' : 'Vault files and folders'));
+    $('vaultSearchInput').placeholder = state.vaultType === 'password' ? 'Search password keys…' : (state.vaultType === 'notes' ? 'Search note labels…' : 'Search filenames…');
+    $('vaultSearchScope').classList.toggle('hidden', state.vaultType !== 'notes');
+    if (state.vaultType !== 'notes') { $('vaultSearchScope').querySelector('input[value=label]').checked = true; state.searchScope = 'label'; }
     $('previewTitle').dataset.vaultType = state.vaultType;
   }
   function populateVaultPicker(vaults, selectId = 'vaultSelect') { const select = $(selectId); select.innerHTML = ''; for (const vault of vaults) { const option = document.createElement('option'); option.value = vault.id; option.textContent = `${vault.label} · ${vault.type === 'password' ? 'Password vault' : (vault.type === 'notes' ? 'Notes vault' : 'File vault')}`; select.append(option); } }
@@ -743,8 +831,113 @@
     } catch (e) { showMessage('vaultManagementMessage', e.message); }
   }
   function syncCreateVaultTypeOptions() { const isPassword = ['password', 'notes'].includes($('createVaultType').value); const conversionLabel = $('convertExistingFolder').closest('label'); conversionLabel.classList.toggle('hidden', isPassword); if (isPassword) $('convertExistingFolder').checked = false; }
-  function openCreateVault() { $('createVaultType').value='file'; $('createVaultLabel').value=''; $('createVaultDirectory').value=''; $('createVaultPrefix').value=''; $('convertExistingFolder').checked=false; $('createManageVisibility').checked=false; syncCreateVaultTypeOptions(); showMessage('createVaultMessage',''); $('createVaultDialog').showModal(); }
-  async function createVault() { const label=$('createVaultLabel').value.trim(), target_directory=$('createVaultDirectory').value.trim(), prefix=$('createVaultPrefix').value.trim(), convert_existing=$('convertExistingFolder').checked, manage_visibility=$('createManageVisibility').checked, vault_type=$('createVaultType').value; if (!label || !target_directory || !prefix) { showMessage('createVaultMessage','Vault label, destination folder, and storage prefix are required.'); return; } if (convert_existing && !confirm('Convert this ordinary non-empty folder into encrypted vault storage? Files will be encrypted and the originals retained until staging and verification succeed. Continue?')) return; const button=$('confirmCreateVaultButton'); button.disabled=true; try { const result=await api('/api/vaults/create',{method:'POST',body:JSON.stringify({label,target_directory,prefix,convert_existing,manage_visibility,vault_type})}); $('createVaultDialog').close(); localStorage.removeItem('mps-session-locked'); state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); setVaultType(result.vault_type || vault_type); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Created and opened ${result.vault_label}.`); } catch(e) { showMessage('createVaultMessage',e.message); } finally { button.disabled=false; } }
+  function openCreateVault() { $('createVaultType').value='file'; $('createVaultLabel').value=''; $('createVaultDirectory').value=''; $('createVaultPrefix').value=''; $('createVaultCreateDirectory').checked=false; $('convertExistingFolder').checked=false; $('createManageVisibility').checked=false; syncCreateVaultTypeOptions(); showMessage('createVaultMessage',''); $('createVaultDialog').showModal(); }
+  async function createVault() { const label=$('createVaultLabel').value.trim(), target_directory=$('createVaultDirectory').value.trim(), prefix=$('createVaultPrefix').value.trim(), convert_existing=$('convertExistingFolder').checked, manage_visibility=$('createManageVisibility').checked, vault_type=$('createVaultType').value; if (!label || !target_directory || !prefix) { showMessage('createVaultMessage','Vault label, destination folder, and storage prefix are required.'); return; } if (convert_existing && !confirm('Convert this ordinary non-empty folder into encrypted vault storage? Files will be encrypted and the originals retained until staging and verification succeed. Continue?')) return; const button=$('confirmCreateVaultButton'); button.disabled=true; try { const result=await api('/api/vaults/create',{method:'POST',body:JSON.stringify({label,target_directory,prefix,convert_existing,manage_visibility,vault_type,create_directory:$('createVaultCreateDirectory').checked})}); $('createVaultDialog').close(); localStorage.removeItem('mps-session-locked'); state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); setVaultType(result.vault_type || vault_type); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast(`Created and opened ${result.vault_label}.`); } catch(e) { showMessage('createVaultMessage',e.message); } finally { button.disabled=false; } }
+  let searchTimer = null;
+  function expandPathToEntry(items, targetId, ancestors = []) {
+    for (const item of items) {
+      if (item.id === targetId) { ancestors.forEach(id => state.expanded.add(id)); return true; }
+      if (item.children?.length && expandPathToEntry(item.children, targetId, [...ancestors, item.id])) return true;
+    }
+    return false;
+  }
+  async function openSearchResult(item) {
+    state.searchQuery = $('vaultSearchInput').value.trim();
+    state.searchScope = state.vaultType === 'notes' ? $('vaultSearchScope').querySelector('input:checked').value : 'label';
+    expandPathToEntry(state.treeItems, item.id);
+    await renderTreeItemsRoot(item.id);
+    const found = findEntry(state.treeItems, item.id);
+    if (found) selectTreeItem(found);
+    $('vaultSearchResults').classList.add('hidden');
+    $('vaultSearchInput').value = '';
+    $('vaultSearchInput').blur();
+  }
+  async function runVaultSearch() {
+    const query = $('vaultSearchInput').value.trim();
+    const results = $('vaultSearchResults');
+    results.replaceChildren();
+    if (!query) { results.classList.add('hidden'); return; }
+    const scope = state.vaultType === 'notes' ? $('vaultSearchScope').querySelector('input:checked').value : 'label';
+    try {
+      const data = await api(`/api/search?q=${encodeURIComponent(query)}&scope=${encodeURIComponent(scope)}`);
+      if ($('vaultSearchInput').value.trim() !== query) return;
+      results.classList.remove('hidden');
+      if (!data.items.length) {
+        const empty = document.createElement('div'); empty.className = 'search-empty'; empty.textContent = 'No matching items'; results.append(empty); return;
+      }
+      data.items.forEach(item => {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'search-result'; button.setAttribute('role', 'option');
+        const name = document.createElement('strong'); name.textContent = item.name;
+        const kind = document.createElement('span'); kind.textContent = item.type === 'password' ? 'Password' : item.type === 'note' ? 'Note' : item.type === 'folder' ? 'Folder' : 'File';
+        button.append(name, kind);
+        button.addEventListener('click', () => openSearchResult(item).catch(error => toast(error.message)));
+        results.append(button);
+      });
+    } catch (error) { results.classList.remove('hidden'); const item = document.createElement('div'); item.className = 'search-empty'; item.textContent = error.message; results.append(item); }
+  }
+  function openVaultImport() {
+    $('vaultArchiveFile').value = ''; $('vaultImportMode').value = 'create'; $('vaultImportLabel').value = ''; $('vaultImportDirectory').value = ''; $('vaultImportCreateDirectory').checked = false;
+    syncVaultImportMode(); showMessage('vaultImportMessage', ''); $('vaultImportDialog').showModal();
+  }
+  function syncVaultImportMode() {
+    const replace = $('vaultImportMode').value === 'replace';
+    $('vaultImportCreateFields').classList.toggle('hidden', replace);
+    $('vaultReplaceWarning').classList.toggle('hidden', !replace);
+    $('confirmVaultImportButton').textContent = replace ? 'Replace current vault' : 'Import as new vault';
+  }
+  function defaultVaultExportFilename() {
+    const safeLabel = (state.vaultLabel || 'vault').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/[. ]+$/g, '').trim() || 'vault';
+    return `${safeLabel}.zip`;
+  }
+  function openVaultExportConfirmation() {
+    showMessage('vaultExportMessage', '');
+    $('vaultExportFilename').value = defaultVaultExportFilename();
+    $('vaultExportConfirmDialog').showModal();
+    $('vaultExportFilename').focus();
+    $('vaultExportFilename').select();
+  }
+  async function exportVaultArchive() {
+    const button = $('confirmVaultExportButton');
+    const filenameInput = $('vaultExportFilename');
+    let filename = filenameInput.value.trim();
+    if (!filename) { showMessage('vaultExportMessage', 'Enter a filename for the backup.'); filenameInput.focus(); return; }
+    filename = filename.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/[. ]+$/g, '').trim();
+    if (!filename) { showMessage('vaultExportMessage', 'Enter a valid filename for the backup.'); filenameInput.focus(); return; }
+    if (!/\.zip$/i.test(filename)) filename += '.zip';
+    const buttonLabel = button.textContent;
+    button.disabled = true;
+    showMessage('vaultExportMessage', 'Preparing encrypted backup…');
+    try {
+      const blob = await api('/api/vaults/export');
+      const url = URL.createObjectURL(blob); const a = document.createElement('a');
+      a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      $('vaultExportConfirmDialog').close();
+      toast('Encrypted vault export started.');
+    } catch (error) {
+      showMessage('vaultExportMessage', `Export failed: ${error.message}`);
+    } finally { button.disabled = false; }
+  }
+  async function importVaultArchive() {
+    const file = $('vaultArchiveFile').files[0];
+    if (!file) { showMessage('vaultImportMessage', 'Choose an encrypted vault ZIP first.'); return; }
+    const mode = $('vaultImportMode').value;
+    if (mode === 'replace' && !confirm('This will replace all data in the currently open vault. Export a backup first. Continue?')) return;
+    const form = new FormData(); form.set('archive', file); form.set('mode', mode);
+    if (mode === 'create') {
+      const target = $('vaultImportDirectory').value.trim(); const label = $('vaultImportLabel').value.trim();
+      if (!target) { showMessage('vaultImportMessage', 'Destination folder path is required.'); return; }
+      form.set('target_directory', target); form.set('label', label); form.set('create_directory', String($('vaultImportCreateDirectory').checked));
+    }
+    const button = $('confirmVaultImportButton'); button.disabled = true; showMessage('vaultImportMessage', 'Verifying and importing encrypted archive…');
+    try {
+      const result = await api('/api/vaults/import', {method:'POST', body:form});
+      $('vaultImportDialog').close(); state.unlocked = true; resetIdleClock(); setVaultLabel(result.vault_label); setVaultType(result.vault_type); resetPreview(); await refreshTree();
+      toast(mode === 'replace' ? 'Current vault replaced successfully.' : `Imported and opened ${result.vault_label}.`);
+    } catch (error) { showMessage('vaultImportMessage', error.message); }
+    finally { button.disabled = false; }
+  }
+
   async function boot() {
     applyTheme(state.theme);
     try {
@@ -757,7 +950,7 @@
   }
   $('setupForm').addEventListener('submit', async e => {
     e.preventDefault(); showMessage('setupMessage','Creating encrypted vault…');
-    try { const result = await api('/api/setup',{method:'POST',body:JSON.stringify({label:$('setupVaultLabel').value.trim(),prefix:$('setupPrefix').value.trim(),target_directory:$('targetDirectory').value.trim(),manage_visibility:$('setupManageVisibility').checked,vault_type:$('setupVaultType').value,password:$('setupPassword').value,confirm_password:$('setupConfirm').value})}); $('setupPassword').value=''; $('setupConfirm').value=''; state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); setVaultType(result.vault_type || $('setupVaultType').value); showScreen('workspace'); await refreshTree(); toast('Vault created.'); }
+    try { const result = await api('/api/setup',{method:'POST',body:JSON.stringify({label:$('setupVaultLabel').value.trim(),prefix:$('setupPrefix').value.trim(),target_directory:$('targetDirectory').value.trim(),manage_visibility:$('setupManageVisibility').checked,vault_type:$('setupVaultType').value,create_directory:$('setupCreateDirectory').checked,password:$('setupPassword').value,confirm_password:$('setupConfirm').value,})}); $('setupPassword').value=''; $('setupConfirm').value=''; state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); setVaultType(result.vault_type || $('setupVaultType').value); showScreen('workspace'); await refreshTree(); toast('Vault created.'); }
     catch(error) { showMessage('setupMessage',error.message); }
   });
   $('unlockForm').addEventListener('submit', async e => {
@@ -765,6 +958,18 @@
     try { const result = await api('/api/unlock',{method:'POST',body:JSON.stringify({password:$('unlockPassword').value,resume_last_used:!!localStorage.getItem('mps-session-locked')})}); $('unlockPassword').value=''; if (!result.selected) { localStorage.removeItem('mps-session-locked'); resetIdleClock(); populateVaultPicker(result.vaults); $('vaultPicker').classList.remove('hidden'); $('unlockForm').classList.add('hidden'); showMessage('unlockMessage','Password accepted. Select a vault to continue.',true); return; } state.unlocked=true; resetIdleClock(); setVaultLabel(result.vault_label); $('vaultPicker').classList.add('hidden'); $('unlockForm').classList.remove('hidden'); showScreen('workspace'); resetPreview(); await refreshTree(); toast('Vault unlocked.'); }
     catch(error) { showMessage('unlockMessage',error.message); }
   });
+  $('forgotPasswordButton').addEventListener('click', async () => {
+    try { const result = await api('/api/password-hint'); showMessage('passwordHintMessage', result.hint ? `Your password hint: ${result.hint}` : 'No password hint has been configured in Settings. The main password cannot be recovered.'); }
+    catch (error) { showMessage('passwordHintMessage', error.message); }
+  });
+  $('vaultSearchInput').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(runVaultSearch, 180); });
+  $('vaultSearchScope').addEventListener('change', event => { if (event.target.matches('input[type=radio]')) { state.searchScope = event.target.value; runVaultSearch(); } });
+  $('exportVaultButton').addEventListener('click', openVaultExportConfirmation);
+  $('cancelVaultExportButton').addEventListener('click', () => $('vaultExportConfirmDialog').close());
+  $('confirmVaultExportButton').addEventListener('click', exportVaultArchive);
+  $('importVaultButton').addEventListener('click', openVaultImport);
+  $('vaultImportMode').addEventListener('change', syncVaultImportMode);
+  $('confirmVaultImportButton').addEventListener('click', importVaultArchive);
   $('lockVaultButton').addEventListener('click', async () => { if (!confirm('Lock My Private Space now?')) return; try { await api('/api/lock',{method:'POST'}); localStorage.setItem('mps-session-locked', String(Date.now())); clearSensitiveUi(); toast('Vault locked.'); } catch(e) { toast(e.message); } });
   $('closeAppButton').addEventListener('click', async () => {
     if (!confirm('Exit My Private Space and shut down its local server?')) return;
@@ -806,6 +1011,8 @@
   $('themeSelect').addEventListener('change', async () => { applyTheme($('themeSelect').value); try { await api('/api/settings',{method:'PUT',body:JSON.stringify({theme:state.theme})}); } catch(e) { toast(e.message); } });
   $('moveVaultButton').addEventListener('click', moveVault);
   $('changePasswordButton').addEventListener('click', changePassword);
+  $('savePasswordHintButton').addEventListener('click', savePasswordHint);
+  $('togglePasswordHintButton').addEventListener('click', togglePasswordHintVisibility);
   for (const dialog of dialogs) $(dialog).addEventListener('click', e => { if (e.target === $(dialog)) $(dialog).close(); });
   let lastActivityPing = 0;
   function resetIdleClock() {
